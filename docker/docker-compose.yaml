@@ -21,6 +21,7 @@ services:
     build:
       dockerfile: docker/aic_model/Dockerfile
       context: ..
+    command: --ros-args -p policy:=aic_example_policies.ros.BlindPush
     networks:
       - default
     environment:
