@@ -95,8 +95,12 @@ class MyPolicy(Policy):
         obs = get_observation()
 
         # 1. Parse task to know target port
-        target_port = task.target_port_name
-        cable_type = task.cable_type
+        # task.port_name = e.g. "sfp_port_0" or "sc_port_0"
+        # task.port_type = e.g. "sfp" or "sc"
+        # task.plug_type = e.g. "sfp" or "sc"
+        # task.target_module_name = e.g. "nic_card_mount_0"
+        # task.cable_type = e.g. "sfp_sc"
+        # task.time_limit = seconds (typically 180)
 
         # 2. Perception: locate port from cameras
         # ...
@@ -143,15 +147,28 @@ move_robot(cmd)
 
 ### Stiffness/Damping Tuning
 
-| Context | Stiffness | Damping | Notes |
-|---------|-----------|---------|-------|
-| Free space motion | 85-200 | 75-100 | High stiffness for precise tracking |
-| Approach | 50-85 | 50-75 | Medium compliance |
-| Insertion | 10-50 | 30-50 | Low stiffness for compliance |
-| Contact detection | 5-20 | 20-40 | Very compliant, feel the port |
+Controller defaults: stiffness=[75,75,75,75,75,75], damping=[35,35,35,35,35,35]
+set_pose_target defaults: stiffness=[90,90,90,50,50,50], damping=[50,50,50,20,20,20]
+Max wrench safety clamp: ±10N force, ±10Nm torque
+
+| Context | Stiffness [xyz,rxryrz] | Damping [xyz,rxryrz] | Notes |
+|---------|------------------------|----------------------|-------|
+| Free space motion | [90,90,90,50,50,50] | [50,50,50,20,20,20] | CheatCode defaults |
+| RunACT inference | [100,100,100,50,50,50] | [40,40,40,15,15,15] | Higher stiffness, velocity mode |
+| Approach | [50-90,50-90,50-90,...] | [35-50,...] | Medium compliance |
+| Insertion | [30-50,30-50,20-30,...] | [20-40,...] | Low Z stiffness for compliance |
+| Contact detection | [10-30,...] | [15-30,...] | Very compliant, feel the port |
 
 Lower stiffness = more compliance = safer during contact but less precise.
 Higher damping = less oscillation = smoother but slower.
+Heuristic: D ≈ 0.4-0.6 * sqrt(K) for critical damping.
+
+### Force Feedback (wrench_feedback_gains_at_tip)
+
+Each gain in [0.0, 0.95]. Set to enable active force control:
+- 0.0 = no force feedback (default)
+- 0.95 = strong force feedback (responsive to contact)
+- Useful for compliant insertion: detect and react to contact forces
 
 ## Scoring Optimization Priority
 

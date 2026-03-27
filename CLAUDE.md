@@ -65,6 +65,30 @@ def insert_cable(self, task, get_observation, move_robot, send_feedback):
 - Tier 2: Smoothness (0-6) + Duration (0-12) + Efficiency (0-6) + Force penalty (0 to -12) + Contact penalty (0 to -24)
 - Tier 3: Correct insertion (75) / Wrong port (-12) / Partial (38-50) / Proximity (0-25)
 
+## Critical Controller Details (from source analysis)
+
+- **Controller update rate:** 500 Hz (aic_ros2_controllers.yaml)
+- **Observation rate:** 20 Hz (aic_adapter, triggered by camera sync)
+- **FT sensor rate:** 50 Hz
+- **Cartesian velocity limits:** ±0.25 m/s translational, 2.0 rad/s rotational
+- **Max wrench (safety clamp):** ±10 N force, ±10 Nm torque
+- **Tracking error timeout:** 2.0s (controller resets if target unreachable)
+- **Nullspace control:** Disabled by default (stiffness=0), damping=10
+- **Controller starts in Cartesian mode** -- switch via service before sending joint commands
+
+### Policy.set_pose_target() Defaults
+- Stiffness: [90, 90, 90, 50, 50, 50] (translation N/m, rotation Nm/rad)
+- Damping: [50, 50, 50, 20, 20, 20]
+
+### Gripper Joint Detail
+- Adapter reorders joints: 6 arm + 1 gripper (position/2 for finger gap)
+- Joint order: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, gripper
+
+### Observation Assembly (aic_adapter)
+- Cameras synchronized within ±1ms
+- Joint/wrench/controller state: finds most recent message ≤ image timestamp
+- Buffers: 128 messages per non-camera stream
+
 ## Development Commands
 
 ```bash
