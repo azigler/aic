@@ -48,3 +48,17 @@ Then register the image URI in the submission portal.
 ## Limit: 1 submission per day
 
 Make it count. Always run full local eval before submitting.
+
+## Remote Runner vs Docker
+
+The Mac Studio remote runner is for **development iteration only**. It provides
+faster eval cycles (~10-12 min vs ~27 min) but is not part of the submission
+pipeline.
+
+**Final submission must always be a Docker container.** Before submitting:
+1. Build the Docker image (`docker compose build model`)
+2. Run full eval in Docker (`docker compose up`)
+3. Verify Docker scores match remote runner scores
+4. Only then tag and push to ECR
+
+Do not rely solely on remote runner scores -- always validate in Docker.

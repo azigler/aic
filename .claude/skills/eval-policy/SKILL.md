@@ -66,6 +66,20 @@ Fast iteration loop:
 AIC_RESULTS_DIR=~/aic_results/dev_$(date +%Y%m%d_%H%M%S)
 ```
 
+### 1b. Remote Eval (Mac Studio)
+
+Faster iteration via remote Mac Studio runner (~10-12 min vs ~27 min local):
+
+```bash
+scripts/remote-eval.sh <your_package>.<YourPolicy>
+```
+
+Results land in `./aic_results/scoring.yaml` (rsynced back from Mac).
+
+Remote and local (Docker) results should be comparable -- physics and scoring are
+identical. If you see discrepancies, verify with a Docker run before drawing
+conclusions. Always use Docker for pre-submission verification.
+
 ### 2. Randomized Eval
 
 Test generalization:

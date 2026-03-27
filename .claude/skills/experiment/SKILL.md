@@ -45,7 +45,22 @@ Execute a proposed experiment.
 
 1. Claim the bead: `br update <id> --status=in_progress`
 2. Implement the policy change
-3. If sim is available, run local eval:
+3. Run eval -- detect whether remote runner is available:
+
+   **Remote runner (preferred, ~10-12 min):**
+   ```bash
+   # Check if runner is configured and reachable
+   if [ -f scripts/runner-config.sh ] && ssh -o ConnectTimeout=3 mac true 2>/dev/null; then
+       scripts/remote-eval.sh <pkg>.<Class>
+   fi
+   ```
+
+   **Local fallback (~27 min):**
+   ```bash
+   docker compose -f docker/docker-compose.yaml up
+   ```
+
+   **Manual local (distrobox):**
    ```bash
    # Terminal 1 (eval container must already be running):
    # distrobox enter -r aic_eval -- /entrypoint.sh start_aic_engine:=true
@@ -56,6 +71,7 @@ Execute a proposed experiment.
      -p use_sim_time:=true -p policy:=<pkg>.<Class>
    ```
 4. Parse results: `cat ~/aic_results/exp-NNN/scoring.yaml`
+   (remote eval places results in `./aic_results/scoring.yaml`)
 5. Log results to the bead (see /experiment log)
 
 ### /experiment log

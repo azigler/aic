@@ -163,6 +163,39 @@ eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud s
 - `.claude/refs/experiment-log.md` -- score leaderboard
 - `.claude/refs/decisions.md` -- design decision log
 
+## Remote Runner (Mac Studio)
+
+A Mac Studio M1 Max can be used as a remote eval runner for faster iteration.
+Instead of running Gazebo in Docker locally (~27 min), code is synced to the Mac
+and evaluated natively with Metal GPU (~10-12 min).
+
+**How it works:**
+1. Edit policy code locally
+2. `rsync` code to Mac Studio
+3. `ssh` to run eval (Gazebo native + ROS 2 via pixi)
+4. `rsync` results back
+5. Analyze `scoring.yaml` locally
+
+**Configuration:** `scripts/runner-config.sh` defines `MAC_HOST` and SSH settings.
+An SSH config entry named `mac` should exist in `~/.ssh/config`.
+
+**Usage:**
+```bash
+scripts/remote-eval.sh <policy_class>              # e.g. aic_example_policies.ros.BlindPush
+scripts/remote-eval.sh <policy_class> <mac_host>   # override host (default: mac)
+```
+
+**Performance comparison:**
+
+| Setup | Eval Time | Experiments/Hour |
+|-------|-----------|-----------------|
+| Local CPU-only (Docker) | ~27 min | ~2 |
+| Mac Native (Metal) | ~10-12 min | ~5-6 |
+| Cloud GPU (L4) | ~5-8 min | ~8-10 |
+
+The remote runner is for **dev iteration only**. Final submission must use the
+Docker container (see `/release`).
+
 ## Conventions
 
 - Python code follows ruff formatting
