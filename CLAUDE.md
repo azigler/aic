@@ -117,9 +117,56 @@ docker compose -f docker/docker-compose.yaml up
 - **ML:** PyTorch, ACT (Action Chunking with Transformers)
 - **Build:** Pixi (conda + ROS), Docker
 
+## Methodology
+
+See `.claude/refs/methodology.md` for the full experiment protocol.
+
+**Core loop:** HYPOTHESIZE -> IMPLEMENT -> SCORE -> LOG -> ANALYZE -> ADJUST
+
+Every experiment gets a bead. Beads are the research log -- hypothesis, changes,
+results table, analysis, and next steps. See `/experiment` skill.
+
+**Exploration tree:**
+- Branch A: Classical (hardcoded -> vision -> force control) -- **start here**
+- Branch B: Imitation (demos -> ACT training)
+- Branch C: Hybrid (vision + learned insertion)
+- Branch D: RL (Isaac Lab)
+
+**Local scoring:** `docker compose -f docker/docker-compose.yaml up` runs headless
+eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud submit.
+
+## Skills Inventory
+
+| Skill | Purpose |
+|-------|---------|
+| `/experiment` | **Core loop** -- propose, run, log, analyze experiments |
+| `/sim` | Gazebo lifecycle, scenarios, cross-simulator training |
+| `/train` | ML training, data collection, experiment tracking |
+| `/eval-policy` | Run trials, parse scores, compare experiments |
+| `/impl` | Policy development phases and control interface reference |
+| `/orient` | Session entry, state discovery, routing |
+| `/lint` | Python/ruff code quality |
+| `/test` | Sim-based eval + unit tests |
+| `/spec` | Design documents for policy approaches |
+| `/review` | Experiment-driven design decisions |
+| `/release` | Docker submission workflow |
+| `/beads` | Task tracking and research log |
+| `/commit` | Gitmoji commit conventions |
+| `/branch` | Branching strategy |
+| `/orchestrator` | Subagent delegation |
+| `/housekeeping` | Cleanup workflows |
+
+## Key References
+
+- `.claude/refs/challenge-description.md` -- full challenge spec
+- `.claude/refs/methodology.md` -- experiment protocol
+- `.claude/refs/experiment-log.md` -- score leaderboard
+- `.claude/refs/decisions.md` -- design decision log
+
 ## Conventions
 
 - Python code follows ruff formatting
 - Commit messages use gitmoji (see /commit skill)
-- Task tracking via beads-rust (`br`)
+- Task tracking via beads-rust (`br`) -- each experiment = one bead
+- Always push commits after each experiment
 - See `.claude/skills/` for all workflow skills
