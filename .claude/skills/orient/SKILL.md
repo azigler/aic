@@ -34,6 +34,16 @@ br list                                     # open beads
 git status --short                          # dirty files
 docker images 2>/dev/null | head -5         # available containers
 docker ps 2>/dev/null                       # running containers
+
+# Check remote runner status
+if [ -f scripts/runner-config.sh ]; then
+    echo "Remote runner config: found"
+    ssh -o ConnectTimeout=3 mac true 2>/dev/null \
+        && echo "Remote runner: reachable" \
+        || echo "Remote runner: UNREACHABLE"
+else
+    echo "Remote runner: not configured"
+fi
 ```
 
 Determine:
@@ -41,6 +51,7 @@ Determine:
 - **Open beads**: in-progress beads = interrupted experiments
 - **Dirty files**: uncommitted changes need attention first
 - **Docker status**: eval container available? model built?
+- **Runner status**: remote Mac Studio configured and reachable?
 - **Current best score**: from experiment-log.md
 
 ## Step 3: Find Current Position
@@ -93,6 +104,7 @@ Assess which phase we're in:
 **Best score**: [from experiment-log.md]
 **Active beads**: [list or none]
 **Docker status**: [eval image pulled? model built? running?]
+**Runner status**: [not configured / reachable / unreachable]
 **Blockers**: [none / list]
 
 **Recommended action**: [what to do next]
