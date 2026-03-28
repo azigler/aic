@@ -163,26 +163,33 @@ eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud s
 - `.claude/refs/experiment-log.md` -- score leaderboard
 - `.claude/refs/decisions.md` -- design decision log
 
-## Remote Runner (Mac Studio)
+## Remote Runner
 
-A Mac Studio M1 Max can be used as a remote eval runner for faster iteration.
-Instead of running Gazebo in Docker locally (~27 min), code is synced to the Mac
-and evaluated natively with Metal GPU (~10-12 min).
+The eval stack runs in Docker (`docker compose up` with eval + model containers).
+A remote Linux machine with a GPU is the recommended way to speed up iteration.
+
+**Why Linux GPU, not macOS:**
+- The eval container (`ghcr.io/intrinsic-dev/aic/aic_eval`) is linux/amd64 only
+- Docker on macOS requires x86 emulation (Rosetta), which is slow and fragile
+- Native Gazebo on macOS fails: conda ogre2 crashes during Metal rendering init,
+  rosidl Python bindings have flat-namespace symbol issues, and macOS SIP blocks
+  the DYLD workarounds
+- Linux GPU (nvidia-container-toolkit) gives native Docker + GPU passthrough
 
 **How it works:**
-1. Edit policy code locally
-2. `rsync` code to Mac Studio
-3. `ssh` to run eval (Gazebo native + ROS 2 via pixi)
+1. Scale up the VPS with a GPU (L4 or similar), or use any Linux box with Docker + nvidia GPU
+2. `rsync` code to remote
+3. `ssh` to run `docker compose -f docker/docker-compose.yaml up`
 4. `rsync` results back
 5. Analyze `scoring.yaml` locally
 
-**Configuration:** `scripts/runner-config.sh` defines `MAC_HOST` and SSH settings.
-An SSH config entry named `mac` should exist in `~/.ssh/config`.
+**Configuration:** `scripts/runner-config.sh` defines remote host and SSH settings.
+`scripts/remote-eval.sh` orchestrates the rsync + eval + fetch cycle.
 
 **Usage:**
 ```bash
 scripts/remote-eval.sh <policy_class>              # e.g. aic_example_policies.ros.BlindPush
-scripts/remote-eval.sh <policy_class> <mac_host>   # override host (default: mac)
+scripts/remote-eval.sh <policy_class> <remote_host> # override host
 ```
 
 **Performance comparison:**
@@ -190,8 +197,7 @@ scripts/remote-eval.sh <policy_class> <mac_host>   # override host (default: mac
 | Setup | Eval Time | Experiments/Hour |
 |-------|-----------|-----------------|
 | Local CPU-only (Docker) | ~27 min | ~2 |
-| Mac Native (Metal) | ~10-12 min | ~5-6 |
-| Cloud GPU (L4) | ~5-8 min | ~8-10 |
+| Linux GPU (L4, Docker) | ~5-8 min | ~8-10 |
 
 The remote runner is for **dev iteration only**. Final submission must use the
 Docker container (see `/release`).
