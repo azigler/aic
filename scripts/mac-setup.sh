@@ -17,11 +17,12 @@
 # What this script does:
 #   1. Installs Homebrew dependencies (cmake, git, wget, curl)
 #   2. Installs Pixi package manager
-#   3. Creates workspace and prompts for repo clone
-#   4. Runs pixi install
-#   5. Creates ~/run-eval.sh helper script
-#   6. Disables GlobalIllumination in aic.sdf for headless performance
-#   7. Verifies Gazebo and ROS 2 are functional
+#   3. Installs Docker Desktop (for submission builds)
+#   4. Creates workspace and prompts for repo clone
+#   5. Runs pixi install
+#   6. Creates ~/run-eval.sh helper script
+#   7. Disables GlobalIllumination in aic.sdf for headless performance
+#   8. Verifies Gazebo and ROS 2 are functional
 # ============================================================================
 
 set -euo pipefail
@@ -104,6 +105,33 @@ install_pixi() {
     else
         err "Pixi installation failed. Please install manually: https://pixi.sh"
         exit 1
+    fi
+}
+
+install_docker() {
+    info "Checking Docker..."
+    if command -v docker &>/dev/null; then
+        ok "Docker is available: $(docker --version)"
+        return
+    fi
+
+    warn "Docker not found. Docker Desktop is needed for submission builds."
+    echo ""
+    if command -v brew &>/dev/null; then
+        info "Installing Docker Desktop via Homebrew..."
+        brew install --cask docker
+        echo ""
+        info "Docker Desktop installed. Please:"
+        echo "  1. Open Docker Desktop from Applications"
+        echo "  2. Complete the setup wizard"
+        echo "  3. Ensure Docker is running (whale icon in menu bar)"
+        echo ""
+        warn "Docker is only needed for final submission -- not for iteration."
+    else
+        echo "Please install Docker Desktop manually:"
+        echo "  https://www.docker.com/products/docker-desktop/"
+        echo ""
+        warn "Docker is only needed for final submission -- not for iteration."
     fi
 }
 
@@ -299,6 +327,7 @@ main() {
     check_xcode_cli
     install_homebrew_deps
     install_pixi
+    install_docker
     setup_workspace
     run_pixi_install
     disable_global_illumination
