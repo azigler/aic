@@ -49,16 +49,30 @@ Then register the image URI in the submission portal.
 
 Make it count. Always run full local eval before submitting.
 
-## Remote Runner vs Docker
+## Cloud GPU Submission Flow
 
-The Mac Studio remote runner is for **development iteration only**. It provides
-faster eval cycles (~10-12 min vs ~27 min) but is not part of the submission
-pipeline.
+Docker build and push happen **on the GPU instance** for speed (NVMe storage, 22
+cores, GPU available for testing). No need for Docker locally.
 
-**Final submission must always be a Docker container.** Before submitting:
-1. Build the Docker image (`docker compose build model`)
-2. Run full eval in Docker (`docker compose up`)
-3. Verify Docker scores match remote runner scores
-4. Only then tag and push to ECR
+```bash
+# SSH into the GPU instance
+ssh gpu
 
-Do not rely solely on remote runner scores -- always validate in Docker.
+# Build on the GPU instance
+cd ~/ws_aic/src/aic
+docker compose -f docker/docker-compose.yaml build model
+
+# Run full eval on GPU instance to verify
+docker compose -f docker/docker-compose.yaml up
+
+# Authenticate and push from GPU instance
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin 973918476471.dkr.ecr.us-east-1.amazonaws.com
+docker tag localhost/my-solution:v1 \
+  973918476471.dkr.ecr.us-east-1.amazonaws.com/aic-team/<team_name>:vN
+docker push 973918476471.dkr.ecr.us-east-1.amazonaws.com/aic-team/<team_name>:vN
+```
+
+**Final submission must always be a Docker container.** The GPU instance matches
+official eval hardware (NVIDIA L4), so Docker eval results there are highly
+representative of cloud eval scores.

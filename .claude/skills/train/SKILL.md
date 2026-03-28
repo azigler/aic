@@ -163,6 +163,52 @@ For each checkpoint:
 
 **Target: 100 pts/trial x 3 trials = 300 max**
 
+## Cloud GPU Training (OVH L4-90)
+
+The OVH L4-90 instance has an NVIDIA L4 GPU with 24GB VRAM and CUDA support,
+matching the official eval hardware. Training runs directly on this instance.
+
+### Recommended Batch Sizes for L4 (24GB VRAM)
+
+| Policy Type | Batch Size | Notes |
+|-------------|-----------|-------|
+| ACT (3 cameras) | 32-64 | 224x224 image input |
+| Diffusion Policy | 16-32 | Higher memory per sample |
+| RL (Isaac Lab) | GPU-parallel envs | Scales with VRAM |
+
+### Training on the GPU Instance
+
+```bash
+# SSH in and run training directly
+ssh gpu
+cd ~/ws_aic/src/aic
+
+# ACT training example
+pixi run python train_act.py --batch-size 32 --epochs 100
+
+# Or from dev host via SSH
+ssh gpu "cd ~/ws_aic/src/aic && pixi run python train_act.py --batch-size 32 --epochs 100"
+```
+
+### Data Collection on GPU Instance
+
+Data collection (teleop or CheatCode demos) can run on the GPU instance with
+Gazebo headless. The GPU accelerates rendering for faster-than-realtime collection.
+
+```bash
+ssh gpu
+cd ~/ws_aic/src/aic
+# Launch headless sim + record demos
+pixi run ros2 bag record -a -o ~/training_data/demo_001 &
+pixi run ros2 run aic_model aic_model --ros-args \
+  -p use_sim_time:=true -p policy:=aic_example_policies.ros.CheatCode
+```
+
+### Cost Note
+
+The GPU instance costs ~$1.00/hr. Stop the instance when not training or
+experimenting. Budget: ~$1.00/hr x 5hr/day x 50 days = ~$250 total.
+
 ## Rules
 
 - **Iterate fast:** Short training runs with quick evals beat long monolithic runs

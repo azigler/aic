@@ -35,14 +35,14 @@ git status --short                          # dirty files
 docker images 2>/dev/null | head -5         # available containers
 docker ps 2>/dev/null                       # running containers
 
-# Check remote runner status
+# Check cloud GPU runner status
 if [ -f scripts/runner-config.sh ]; then
-    echo "Remote runner config: found"
-    ssh -o ConnectTimeout=3 mac true 2>/dev/null \
-        && echo "Remote runner: reachable" \
-        || echo "Remote runner: UNREACHABLE"
+    echo "Cloud GPU runner config: found"
+    ssh -o ConnectTimeout=3 gpu true 2>/dev/null \
+        && echo "Cloud GPU runner: reachable" \
+        || echo "Cloud GPU runner: UNREACHABLE"
 else
-    echo "Remote runner: not configured"
+    echo "Cloud GPU runner: not configured"
 fi
 ```
 
@@ -51,7 +51,7 @@ Determine:
 - **Open beads**: in-progress beads = interrupted experiments
 - **Dirty files**: uncommitted changes need attention first
 - **Docker status**: eval container available? model built?
-- **Runner status**: remote Mac Studio configured and reachable?
+- **Runner status**: cloud GPU instance configured and reachable?
 - **Current best score**: from experiment-log.md
 
 ## Step 3: Find Current Position

@@ -47,10 +47,10 @@ Execute a proposed experiment.
 2. Implement the policy change
 3. Run eval -- detect whether remote runner is available:
 
-   **Remote runner (preferred, ~10-12 min):**
+   **Cloud GPU runner (preferred, ~5-10 min):**
    ```bash
    # Check if runner is configured and reachable
-   if [ -f scripts/runner-config.sh ] && ssh -o ConnectTimeout=3 mac true 2>/dev/null; then
+   if [ -f scripts/runner-config.sh ] && ssh -o ConnectTimeout=3 gpu true 2>/dev/null; then
        scripts/remote-eval.sh <pkg>.<Class>
    fi
    ```

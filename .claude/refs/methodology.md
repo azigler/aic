@@ -193,6 +193,10 @@ The ideal loop runs autonomously:
 5. **Agent analyzes** and proposes next experiment
 6. **Repeat**
 
+**Cloud GPU eval performance:** ~5-10 min per 3-trial eval on the OVH L4
+instance (NVIDIA L4, matches official eval hardware). This gives 6-12 experiments
+per hour. Cost: ~$1.00/hr -- stop the instance when not experimenting.
+
 When sim isn't available (no GPU, no Gazebo), the agent can still:
 - Write policy code
 - Analyze prior results
