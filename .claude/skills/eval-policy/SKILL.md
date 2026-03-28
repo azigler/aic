@@ -66,19 +66,20 @@ Fast iteration loop:
 AIC_RESULTS_DIR=~/aic_results/dev_$(date +%Y%m%d_%H%M%S)
 ```
 
-### 1b. Remote Eval (Mac Studio)
+### 1b. Remote Eval (Cloud GPU)
 
-Faster iteration via remote Mac Studio runner (~10-12 min vs ~27 min local):
+Faster iteration via cloud GPU runner (~5-10 min vs ~27 min local). The GPU
+instance uses the same NVIDIA L4 as official cloud eval.
 
 ```bash
 scripts/remote-eval.sh <your_package>.<YourPolicy>
 ```
 
-Results land in `./aic_results/scoring.yaml` (rsynced back from Mac).
+Results land in `./aic_results/scoring.yaml` (rsynced back from GPU instance).
 
 Remote and local (Docker) results should be comparable -- physics and scoring are
-identical. If you see discrepancies, verify with a Docker run before drawing
-conclusions. Always use Docker for pre-submission verification.
+identical. The GPU instance matches official eval hardware, so results are highly
+representative. Always use Docker for pre-submission verification.
 
 ### 2. Randomized Eval
 

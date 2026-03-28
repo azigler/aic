@@ -163,26 +163,26 @@ eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud s
 - `.claude/refs/experiment-log.md` -- score leaderboard
 - `.claude/refs/decisions.md` -- design decision log
 
-## Remote Runner (Mac Studio)
+## Cloud GPU Runner (OVH L4-90)
 
-A Mac Studio M1 Max can be used as a remote eval runner for faster iteration.
-Instead of running Gazebo in Docker locally (~27 min), code is synced to the Mac
-and evaluated natively with Metal GPU (~10-12 min).
+An OVH cloud GPU instance (NVIDIA L4, 24GB VRAM) serves as the remote eval,
+training, and submission runner. This matches the **official cloud eval hardware**
+exactly, eliminating sim-to-sim GPU discrepancy. Cost: ~$1.00/hr.
 
 **How it works:**
-1. Edit policy code locally
-2. `rsync` code to Mac Studio
-3. `ssh` to run eval (Gazebo native + ROS 2 via pixi)
+1. Edit policy code locally (or SSH directly into the GPU instance)
+2. `rsync` code to GPU instance
+3. `ssh` to run eval (Gazebo native + ROS 2 via pixi, GPU-accelerated)
 4. `rsync` results back
 5. Analyze `scoring.yaml` locally
 
-**Configuration:** `scripts/runner-config.sh` defines `MAC_HOST` and SSH settings.
-An SSH config entry named `mac` should exist in `~/.ssh/config`.
+**Configuration:** `scripts/runner-config.sh` defines `GPU_HOST` and SSH settings.
+An SSH config entry named `gpu` should exist in `~/.ssh/config`.
 
 **Usage:**
 ```bash
 scripts/remote-eval.sh <policy_class>              # e.g. aic_example_policies.ros.BlindPush
-scripts/remote-eval.sh <policy_class> <mac_host>   # override host (default: mac)
+scripts/remote-eval.sh <policy_class> <gpu_host>   # override host (default: gpu)
 ```
 
 **Performance comparison:**
@@ -190,11 +190,14 @@ scripts/remote-eval.sh <policy_class> <mac_host>   # override host (default: mac
 | Setup | Eval Time | Experiments/Hour |
 |-------|-----------|-----------------|
 | Local CPU-only (Docker) | ~27 min | ~2 |
-| Mac Native (Metal) | ~10-12 min | ~5-6 |
-| Cloud GPU (L4) | ~5-8 min | ~8-10 |
+| Cloud GPU (L4) | ~5-10 min | ~6-12 |
 
-The remote runner is for **dev iteration only**. Final submission must use the
-Docker container (see `/release`).
+**Training:** The L4 with 24GB VRAM and CUDA supports training directly on the
+instance (ACT batch 32-64, diffusion batch 16-32). See `/train` for details.
+
+The cloud GPU runner handles **dev iteration, training, and Docker builds**. Final
+submission Docker images can be built and pushed to ECR directly from the GPU
+instance (see `/release`).
 
 ## Conventions
 

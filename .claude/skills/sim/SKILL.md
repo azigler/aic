@@ -114,56 +114,47 @@ ros2 service call /aic_controller/tare_force_torque_sensor std_srvs/srv/Trigger
 5. Engine scores the trial
 6. Repeat for next trial (3 trials in qualification)
 
-## Remote Runner (Mac Studio)
+## Cloud GPU Runner (OVH L4-90)
 
-Run Gazebo eval natively on a Mac Studio M1 Max for faster iteration (~10-12 min
-vs ~27 min local Docker).
+Run Gazebo eval on an OVH cloud GPU instance (NVIDIA L4, 24GB VRAM) for fast
+iteration (~5-10 min vs ~27 min local Docker). This GPU matches the official
+cloud eval hardware exactly.
 
-### Mac Setup
+### GPU Instance Setup
 
-Prerequisites: macOS 13+, Xcode Command Line Tools, Homebrew.
+See `.claude/refs/spec-cloud-runner.md` for full one-time setup. The instance
+runs Ubuntu 24.04 with NVIDIA drivers, pixi, ROS 2, Gazebo, and Docker
+pre-configured.
 
 ```bash
-# 1. Install dependencies
-brew install cmake git wget curl
-
-# 2. Install pixi
-curl -fsSL https://pixi.sh/install.sh | sh
-
-# 3. Clone and install
-mkdir -p ~/ws_aic/src && cd ~/ws_aic/src
-git clone <repo-url> aic && cd aic
-pixi install
-
-# 4. Verify
-pixi run gz sim --version
-pixi run ros2 --version
-
-# 5. Create ~/run-eval.sh (see .claude/refs/spec-mac-runner.md for full script)
+# Verify GPU instance is ready
+ssh gpu "nvidia-smi && pixi run gz sim --version"
 ```
 
-### Running Headless on Mac
+### Running Headless over SSH
 
 The remote eval script runs Gazebo with `gazebo_gui:=false` and `launch_rviz:=false`.
-No display is needed -- the Mac can run fully headless over SSH.
+No display is needed -- the GPU instance runs fully headless over SSH.
 
 ### Differences from Docker-Based Eval
 
-| Aspect | Docker (local) | Mac Native |
-|--------|---------------|------------|
-| Renderer | OGRE2 + OpenGL | OGRE2 + Metal |
+| Aspect | Docker (local) | Cloud GPU (L4) |
+|--------|---------------|----------------|
+| GPU | None (CPU rendering) | NVIDIA L4 (matches cloud eval) |
 | Physics | Identical | Identical |
 | Scoring | Identical | Identical |
-| Eval time | ~27 min | ~10-12 min |
+| Eval time | ~27 min | ~5-10 min |
 | Setup | `docker compose up` | SSH + rsync |
+| Training | N/A | CUDA, 24GB VRAM |
 
-Visual appearance may differ slightly (Metal vs OpenGL), but physics and scoring
-are identical. Always do a final verification in Docker before submission.
+Physics and scoring are identical. The GPU instance matches official eval hardware,
+so results are highly representative. Always do a final Docker verification before
+submission.
 
 ### Usage from Dev Host
 
 ```bash
-scripts/remote-eval.sh <policy_class>           # uses 'mac' SSH host
+scripts/remote-eval.sh <policy_class>           # uses 'gpu' SSH host
 scripts/remote-eval.sh <policy_class> <host>    # custom host
 ```
 
