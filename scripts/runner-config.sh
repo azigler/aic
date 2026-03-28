@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
 # ============================================================================
-# runner-config.sh -- Configuration for the Mac Studio remote eval runner
+# runner-config.sh -- Configuration for the remote eval runner
 # ============================================================================
 #
 # Source this file from other scripts to pick up defaults:
 #   source "$(dirname "$0")/runner-config.sh"
 #
 # Override any value via environment variables before sourcing:
-#   MAC_HOST=mac-studio source scripts/runner-config.sh
+#   GPU_HOST=my-gpu source scripts/runner-config.sh
 #
-# SSH setup:
+# SSH setup (OVH cloud GPU):
 #   Add an entry to ~/.ssh/config:
-#     Host mac
-#         HostName <ip-or-hostname>
-#         User <username>
+#     Host gpu
+#         HostName <ovh-instance-ip>
+#         User ubuntu
 #         IdentityFile ~/.ssh/id_ed25519
 #         ForwardAgent yes
 # ============================================================================
 
 # SSH hostname (must match ~/.ssh/config or be a reachable address)
-MAC_HOST="${MAC_HOST:-mac}"
+# GPU_HOST is the primary variable; MAC_HOST is kept for backward compatibility.
+GPU_HOST="${GPU_HOST:-${MAC_HOST:-gpu}}"
+MAC_HOST="${MAC_HOST:-$GPU_HOST}"
 
-# Directory on the Mac where the repo lives
+# Directory on the remote host where the repo lives
 REMOTE_DIR="${REMOTE_DIR:-~/ws_aic/src/aic}"
 
 # Default policy class for evaluation
