@@ -92,6 +92,12 @@ SYNC_END=$(date +%s)
 SYNC_SECS=$((SYNC_END - SYNC_START))
 ok "Code synced in ${SYNC_SECS}s. [$(elapsed)]"
 
+# -- Step 1b: Reinstall pixi packages so code changes are picked up -----------
+info "Reinstalling pixi packages on $REMOTE_HOST..."
+ssh -o ConnectTimeout="$SSH_TIMEOUT" "$REMOTE_HOST" \
+    "export PATH=\$HOME/.pixi/bin:\$PATH && cd $REMOTE_DIR && pixi reinstall ros-kilted-aic-example-policies 2>&1 | tail -3"
+ok "Pixi packages reinstalled. [$(elapsed)]"
+
 # -- Step 2: Run eval ---------------------------------------------------------
 echo ""
 info "=== Running eval on $REMOTE_HOST ==="
