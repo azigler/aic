@@ -1,11 +1,11 @@
 #
-# exp-004: DirectApproach v2
+# exp-005: DirectApproach v3
 #
-# Improvements over v1:
-# 1. Increase max descent from 8cm to 15cm
-# 2. After initial descent, wiggle in XY to find the port (spiral search)
-# 3. Lower force limit to detect contact earlier -> indicates we're near the port
-# 4. If force contact detected, switch to very compliant mode and push gently
+# Improvements over v2:
+# 1. Wider spiral search (15mm radius vs 10mm)
+# 2. More aggressive final insertion push (longer, deeper)
+# 3. Multiple spiral+push cycles to find and enter the port
+# 4. Continue pushing until force limit or max depth
 #
 
 import math
@@ -138,9 +138,9 @@ class DirectApproach(Policy):
         center_y = target_y
         spiral_z = target_z
 
-        for ring in range(1, 6):  # 5 rings of increasing radius
-            radius = ring * 0.002  # 2mm per ring
-            points = max(8, ring * 8)  # More points for larger rings
+        for ring in range(1, 8):  # 7 rings of increasing radius
+            radius = ring * 0.002  # 2mm per ring, max 14mm
+            points = max(12, ring * 8)  # More points for larger rings
 
             for p in range(points):
                 angle = 2 * math.pi * p / points
@@ -177,33 +177,41 @@ class DirectApproach(Policy):
             )
 
         # Phase 3: Final push down with very compliant control
+        # Multiple push cycles -- keep trying to go deeper
         send_feedback("Phase 3: Insertion push...")
-        insert_stiffness = [30.0, 30.0, 20.0, 20.0, 20.0, 20.0]
-        insert_damping = [30.0, 30.0, 25.0, 15.0, 15.0, 15.0]
+        insert_stiffness = [40.0, 40.0, 25.0, 20.0, 20.0, 20.0]
+        insert_damping = [35.0, 35.0, 25.0, 15.0, 15.0, 15.0]
 
         final_z = spiral_z
-        for _ in range(100):
-            obs = get_observation()
-            if obs is None:
-                continue
+        for cycle in range(3):  # 3 push cycles
+            pushed = 0
+            for _ in range(200):  # 200 steps per cycle
+                obs = get_observation()
+                if obs is None:
+                    continue
 
-            rel_f = self._get_force(obs) - baseline
-            if rel_f > force_limit:
-                self.sleep_for(0.05)
-                continue
+                rel_f = self._get_force(obs) - baseline
+                if rel_f > force_limit:
+                    self.sleep_for(0.05)
+                    continue
 
-            final_z -= 0.0003
-            pose = Pose(
-                position=Point(x=center_x, y=center_y, z=final_z),
-                orientation=start_pose.orientation,
+                final_z -= 0.0003  # 0.3mm per step
+                pushed += 0.0003
+                pose = Pose(
+                    position=Point(x=center_x, y=center_y, z=final_z),
+                    orientation=start_pose.orientation,
+                )
+                self.set_pose_target(
+                    move_robot=move_robot,
+                    pose=pose,
+                    stiffness=insert_stiffness,
+                    damping=insert_damping,
+                )
+                self.sleep_for(0.04)
+
+            self.get_logger().info(
+                f"Push cycle {cycle + 1}: pushed {pushed * 1000:.1f}mm, z={final_z:.4f}"
             )
-            self.set_pose_target(
-                move_robot=move_robot,
-                pose=pose,
-                stiffness=insert_stiffness,
-                damping=insert_damping,
-            )
-            self.sleep_for(0.05)
 
         # Hold
         send_feedback("Holding...")
