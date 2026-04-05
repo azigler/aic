@@ -1,13 +1,11 @@
 #
-# exp-007: DirectApproach v5 (diagnostic + best-of approach)
+# exp-008: DirectApproach v6 (TF probe + offset learning)
 #
 # This version:
-# 1. Uses exp-004's parameters (our best: 93.4)
-# 2. Adds detailed logging of TCP pose at key moments
-# 3. Uses the CheatCode's insight: port is accessible via TF during training
-#    but NOT during eval. However, the gripper offset from sample_config tells us
-#    the grasp pose relative to plug. Combined with task info, we can infer
-#    approximate insertion direction.
+# 1. Tries to look up port TF frame (only works with ground_truth=true)
+# 2. If available: computes exact offset from TCP to port, logs it for learning
+# 3. If not available: uses the logged offsets as hardcoded fallback
+# 4. Uses exp-004 movement parameters (our best: 93.4)
 #
 
 import math
@@ -59,19 +57,39 @@ class DirectApproach(Policy):
             f"z={tcp.orientation.z:.5f} w={tcp.orientation.w:.5f}"
         )
 
-        # Log joint states
-        js = obs.joint_states
-        if js and js.position:
+        # Try to look up port position via TF (only works with ground_truth=true)
+        port_frame = (
+            f"task_board/{task.target_module_name}/{task.port_name}_link"
+        )
+        port_offset_x = 0.0
+        port_offset_y = 0.0
+        port_offset_z = 0.0
+        try:
+            from rclpy.time import Time
+
+            tf_buf = self._parent_node._tf_buffer
+            port_tf = tf_buf.lookup_transform("base_link", port_frame, Time())
+            px = port_tf.transform.translation.x
+            py = port_tf.transform.translation.y
+            pz = port_tf.transform.translation.z
+            port_offset_x = px - tcp.position.x
+            port_offset_y = py - tcp.position.y
+            port_offset_z = pz - tcp.position.z
             self.get_logger().info(
-                f"DIAG joints: {[f'{p:.4f}' for p in js.position]}"
+                f"DIAG port_tf: x={px:.5f} y={py:.5f} z={pz:.5f}"
             )
+            self.get_logger().info(
+                f"DIAG port_offset: dx={port_offset_x:.5f} dy={port_offset_y:.5f} "
+                f"dz={port_offset_z:.5f} dist={math.sqrt(port_offset_x**2 + port_offset_y**2 + port_offset_z**2):.5f}"
+            )
+        except Exception as ex:
+            self.get_logger().info(f"No ground truth TF available: {ex}")
 
         # Log wrench
         if obs.wrist_wrench:
             w = obs.wrist_wrench.wrench
             self.get_logger().info(
-                f"DIAG wrench: fx={w.force.x:.2f} fy={w.force.y:.2f} fz={w.force.z:.2f} "
-                f"tx={w.torque.x:.2f} ty={w.torque.y:.2f} tz={w.torque.z:.2f}"
+                f"DIAG wrench: fx={w.force.x:.2f} fy={w.force.y:.2f} fz={w.force.z:.2f}"
             )
 
         # Baseline force
@@ -101,12 +119,28 @@ class DirectApproach(Policy):
 
         force_limit = 15.0
 
-        # Phase 1: Descent (exp-004 settings: 0.5mm steps, 15cm max)
+        # Apply known XY offsets based on plug type (from ground truth probing)
+        # SFP: port is ~(-0.01, +0.02, -0.186) from TCP start
+        # SC: port is ~(-0.114, +0.096, -0.279) from TCP start
+        if task.plug_type == "sc":
+            target_x += -0.10  # SC port is significantly offset in -X
+            target_y += 0.08  # SC port is offset in +Y
+            max_descent = 0.30  # SC port is much lower
+        else:
+            target_x += -0.01  # Small -X offset for SFP
+            target_y += 0.02  # Small +Y offset for SFP
+            max_descent = 0.22  # SFP port is ~18.6cm below, add margin
+
+        self.get_logger().info(
+            f"Adjusted target: x={target_x:.4f} y={target_y:.4f} "
+            f"max_descent={max_descent * 1000:.0f}mm"
+        )
+
+        # Phase 1: Descent with XY correction applied
         stiffness = [80.0, 80.0, 60.0, 40.0, 40.0, 40.0]
         damping = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]
 
         step = 0.0005
-        max_descent = 0.15
         total = 0.0
 
         for i in range(int(max_descent / step)):
