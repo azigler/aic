@@ -252,13 +252,8 @@ def compute_normalization_stats(
 # We try to import LeRobot's ACT. If unavailable, we use a simplified
 # transformer-based action chunking model that produces compatible weights.
 
-try:
-    from lerobot.policies.act.configuration_act import ACTConfig
-    from lerobot.policies.act.modeling_act import ACTPolicy
-
-    HAVE_LEROBOT = True
-except ImportError:
-    HAVE_LEROBOT = False
+# LeRobot ACT API varies across versions -- using SimpleACT instead
+HAVE_LEROBOT = False
 
 
 class SimpleACT(nn.Module):
@@ -455,28 +450,9 @@ def train(args):
     )
 
     # Build model
-    if HAVE_LEROBOT:
-        print("Using LeRobot ACTPolicy")
-        config = ACTConfig(
-            input_shapes={
-                "observation.images.left_camera": [3, 256, 256],
-                "observation.images.center_camera": [3, 256, 256],
-                "observation.images.right_camera": [3, 256, 256],
-                "observation.state": [26],
-            },
-            output_shapes={"action": [7]},
-            input_normalization_modes={
-                "observation.images.left_camera": "mean_std",
-                "observation.images.center_camera": "mean_std",
-                "observation.images.right_camera": "mean_std",
-                "observation.state": "mean_std",
-            },
-            output_normalization_modes={"action": "mean_std"},
-            chunk_size=args.chunk_size,
-            n_action_steps=1,
-        )
-        model = ACTPolicy(config)
-        model.to(device)
+    # Always use SimpleACT -- LeRobot ACTConfig API varies across versions
+    if False:
+        pass
     else:
         print("LeRobot not available, using SimpleACT model")
         model = SimpleACT(
