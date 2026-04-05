@@ -39,3 +39,5 @@ bb6674c	102.0	480	keep	C	exp-026: ACT v3 (12 demos, 89 epochs, chunk=100) -- sam
 2ce91b5	120.7	480	best	C	exp-027: ACT v4 DIVERSE (6 demos, 2 configs, 100 epochs) -- NEW HIGH!
 a91d4be	120.7	480	keep	C	exp-028: ACT v5 (9 demos, 3 configs) -- same as v4, needs more diversity
 fc69455	121.9	480	best	C	exp-029: ACT v6 (27 demos, 8 configs, 100 epochs) -- 1s execution, NEW HIGH!
+59d6101	115.0	480	discard	C	exp-030: ACT v7 (29ep only) -- 115, killed early
+59d6101	115.0	480	discard	C	exp-031: chunk20 (27 demos, 100ep, chunk=20) -- smaller chunk didn't help
