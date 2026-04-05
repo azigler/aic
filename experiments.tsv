@@ -37,3 +37,4 @@ b4a5497	101.9	-	keep	C	exp-025: ACT v2 (6 demos, 50 epochs, chunk=50)
 -	-	-	running	C	exp-026: ACT v3 (12 demos, 200 epochs, chunk=100) -- training...
 bb6674c	102.0	480	keep	C	exp-026: ACT v3 (12 demos, 89 epochs, chunk=100) -- same score, need diverse data
 2ce91b5	120.7	480	best	C	exp-027: ACT v4 DIVERSE (6 demos, 2 configs, 100 epochs) -- NEW HIGH!
+a91d4be	120.7	480	keep	C	exp-028: ACT v5 (9 demos, 3 configs) -- same as v4, needs more diversity
