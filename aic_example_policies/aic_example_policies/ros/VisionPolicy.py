@@ -81,19 +81,18 @@ class VisionPolicy(Policy):
         """Convert camera-frame XY offset to approximate base-frame XY offset.
 
         The center camera optical frame has X=right, Y=down, Z=forward.
-        When the gripper is pointing straight down (nominal orientation),
-        camera X maps roughly to base -Y, camera Y maps roughly to base -X,
-        and camera Z maps roughly to base -Z.
+        The gripper points straight down with q=(1,0,0,0) = 180° around X.
 
-        This is a simplified transform that works for the nominal downward
-        orientation used during insertion. A full quaternion rotation would
-        be needed for arbitrary poses.
+        From ground truth calibration data:
+        - Camera detects port at cam=(+0.003, -0.005)
+        - Actual port offset is base=(-0.011, +0.019)
+        - So camera X -> base +Y, camera Y -> base +X (with sign flips)
+
+        Empirically calibrated mapping:
         """
-        # Camera optical frame -> base frame (approximate for downward pose)
-        # camera X (right) ~ base -Y
-        # camera Y (down)  ~ base -X
-        dx_base = -cam_offset[1]  # camera Y -> base -X
-        dy_base = -cam_offset[0]  # camera X -> base -Y
+        # Camera optical frame -> base frame (calibrated from ground truth)
+        dx_base = cam_offset[1]  # camera Y -> base +X
+        dy_base = cam_offset[0]  # camera X -> base +Y
         return dx_base, dy_base
 
     # ------------------------------------------------------------------
@@ -222,11 +221,12 @@ class VisionPolicy(Policy):
                 self.sleep_for(0.05)
                 continue
 
-            # Periodic visual servo refinement during descent
+            # Visual servo during descent -- only in first 40% of descent
+            # (at close range the perspective distorts too much)
             if (
                 i > 0
                 and i % servo_interval == 0
-                and total_descent < max_descent * 0.7
+                and total_descent < max_descent * 0.4
             ):
                 cam_offset = self._detect_port_from_obs(
                     obs, task.plug_type, task.port_name
@@ -235,8 +235,7 @@ class VisionPolicy(Policy):
                     dx_base, dy_base = self._camera_offset_to_base_xy(
                         cam_offset, obs.controller_state.tcp_pose
                     )
-                    # Apply a fraction of the correction (damped servo)
-                    correction_gain = 0.3
+                    correction_gain = 0.2  # Reduced from 0.3 -- less aggressive
                     target_x += dx_base * correction_gain
                     target_y += dy_base * correction_gain
                     self.get_logger().info(

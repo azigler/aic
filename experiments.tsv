@@ -10,3 +10,5 @@ a1b2c3d	93.4	-	best	A1	exp-004 DirectApproach v2: PARTIAL INSERTION on trial 1
 -	98.5	-	best	B	exp-010 VisionPolicy: color detection (green=SFP, blue=SC)
 -	57.4	-	discard	B	exp-011a Higher force limit: pushed too deep past port
 -	76.0	-	discard	B	exp-011b Per-port detection: wrong port selected
+af15a58	60.4	420	discard	B	exp-012a: swapped transform, servo diverged at depth
+af15a58	98.4	420	keep	B	exp-012b: calibrated transform + limited servo (40% descent only)
