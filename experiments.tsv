@@ -26,3 +26,5 @@ ada2cc4	49.5	480	discard	B	exp-018a: damped IBVS still oscillates
 ada2cc4	100.1	420	best	B	exp-018b: averaged IBVS -- broke 100! Partial insertion T1
 060b335	49.5	480	discard	B	exp-018a: damped IBVS gain halved, still oscillates
 060b335	86.3	420	discard	B	exp-019: two-pass IBVS, mid-descent correction didn't help
+b1951cf	86.3	420	discard	B	exp-019: mid-descent IBVS correction
+b1951cf	86.2	420	keep	B	exp-020: variance test of averaged IBVS

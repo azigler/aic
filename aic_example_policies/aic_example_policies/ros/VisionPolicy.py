@@ -37,16 +37,16 @@ class VisionPolicy(Policy):
         return math.sqrt(w.force.x**2 + w.force.y**2 + w.force.z**2)
 
     def _measure_baseline_force(self, get_observation) -> float:
-        """Sample force over 0.5s to get baseline (cable weight ~21N)."""
+        """Quick force baseline (cable weight ~21N)."""
         forces = []
-        for _ in range(10):
+        for _ in range(5):
             obs = get_observation()
             if obs:
                 forces.append(self._get_force(obs))
-            self.sleep_for(0.05)
+            self.sleep_for(0.03)
         return sum(forces) / len(forces) if forces else 25.0
 
-    def _stabilize(self, get_observation, move_robot, steps: int = 10) -> None:
+    def _stabilize(self, get_observation, move_robot, steps: int = 5) -> None:
         """Hold current pose briefly to let the arm settle."""
         for _ in range(steps):
             obs = get_observation()
@@ -54,7 +54,7 @@ class VisionPolicy(Policy):
                 self.set_pose_target(
                     move_robot=move_robot, pose=obs.controller_state.tcp_pose
                 )
-            self.sleep_for(0.05)
+            self.sleep_for(0.03)
 
     def _detect_port_from_obs(
         self, obs, port_type: str, port_name: str = "sfp_port_0"
@@ -205,9 +205,9 @@ class VisionPolicy(Policy):
         # ------------------------------------------------------------------
         self.get_logger().info("Phase 2: Descent with visual refinement")
 
-        stiffness = [80.0, 80.0, 60.0, 40.0, 40.0, 40.0]
+        stiffness = [90.0, 90.0, 70.0, 50.0, 50.0, 50.0]
         damping = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]
-        step = 0.0005
+        step = 0.001  # 1mm per step (2x faster)
         total_descent = 0.0
         for i in range(int(max_descent / step)):
             obs = get_observation()
@@ -216,11 +216,11 @@ class VisionPolicy(Policy):
 
             rel_f = self._get_force(obs) - baseline
             if rel_f > force_limit:
-                self.sleep_for(0.05)
+                self.sleep_for(0.03)
                 continue
 
             # Periodic visual servo refinement during descent
-            if i > 0 and i % 40 == 0 and total_descent < max_descent * 0.7:
+            if i > 0 and i % 20 == 0 and total_descent < max_descent * 0.7:
                 cam_offset = self._detect_port_from_obs(
                     obs, task.plug_type, task.port_name
                 )
@@ -256,7 +256,7 @@ class VisionPolicy(Policy):
                     f"Descent: {total_descent * 1000:.1f}mm z={target_z:.4f} "
                     f"f={rel_f:.1f}N"
                 )
-            self.sleep_for(0.05)
+            self.sleep_for(0.03)
 
         self.get_logger().info(
             f"Descent complete: {total_descent * 1000:.1f}mm"
@@ -338,6 +338,6 @@ class VisionPolicy(Policy):
                 f"Final TCP: x={p.x:.5f} y={p.y:.5f} z={p.z:.5f}"
             )
 
-        self.sleep_for(3.0)
-        self.get_logger().info("=== VisionPolicy v1 complete ===")
+        self.sleep_for(1.5)
+        self.get_logger().info("=== VisionPolicy complete ===")
         return True
