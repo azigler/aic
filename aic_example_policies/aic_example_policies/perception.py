@@ -5,7 +5,6 @@ estimate their 3D position relative to the camera frame.
 """
 
 import contextlib
-import math
 from pathlib import Path
 
 import cv2
@@ -76,177 +75,106 @@ def _get_camera_intrinsics(camera_info) -> tuple[float, float, float, float]:
 
 
 def _detect_sfp_port(bgr: np.ndarray) -> tuple[float, float, float] | None:
-    """Detect SFP port candidates in a BGR image.
+    """Detect SFP port candidates in a BGR image using COLOR detection.
 
-    SFP ports are rectangular metallic openings on NIC cards. They appear
-    as dark rectangular regions with strong edges. We look in the lower
-    portion of the image where the task board is expected.
+    From camera images: SFP ports appear as GREEN/TEAL rectangular openings
+    on the dark NIC card. This is very distinctive against the grey board.
 
     Returns (centroid_x, centroid_y, confidence) or None.
     """
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
 
-    # Focus on the lower 70% of the image (board area during approach)
-    roi_top = int(h * 0.2)
-    roi = gray[roi_top:, :]
+    # Green/teal color range in HSV (SFP port interior)
+    # Teal/cyan: H=75-100, S=50-255, V=80-255
+    lower_green = np.array([60, 40, 60])
+    upper_green = np.array([110, 255, 255])
+    mask = cv2.inRange(hsv, lower_green, upper_green)
 
-    # Enhance contrast via CLAHE
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(roi)
+    # Clean up the mask
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-    # Edge detection
-    edges = cv2.Canny(enhanced, 50, 150)
-
-    # Dilate to close gaps in edges
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    edges = cv2.dilate(edges, kernel, iterations=1)
-
-    # Find contours
+    # Find contours of green regions
     contours, _ = cv2.findContours(
-        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
 
+    if not contours:
+        return None
+
+    # Find the largest green contour (most likely the SFP port)
     best = None
-    best_score = 0.0
+    best_area = 0
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        # SFP port should be a moderate-sized rectangle in the image
-        # At ~18cm distance in a 1152x1024 image, the port is roughly 40-200px wide
-        if area < 200 or area > 50000:
+        if area < 50:  # Minimum size filter
             continue
-
-        # Fit a rotated rectangle
-        rect = cv2.minAreaRect(cnt)
-        rect_w, rect_h = rect[1]
-        if rect_w == 0 or rect_h == 0:
-            continue
-
-        # SFP ports are roughly 2:1 to 4:1 aspect ratio
-        aspect = max(rect_w, rect_h) / min(rect_w, rect_h)
-        if aspect < 1.3 or aspect > 6.0:
-            continue
-
-        # Rectangularity: how much of the bounding rect is filled
-        rect_area = rect_w * rect_h
-        rectangularity = area / rect_area if rect_area > 0 else 0
-        if rectangularity < 0.4:
-            continue
-
-        # Score: prefer larger, more rectangular contours in center of image
-        cx_cnt = rect[0][0]
-        cy_cnt = rect[0][1] + roi_top  # Adjust back to full image coords
-        center_dist = abs(cx_cnt - w / 2) / w + abs(cy_cnt - h / 2) / h
-        score = area * rectangularity * (1.0 - 0.3 * center_dist)
-
-        if score > best_score:
-            best_score = score
-            best = (cx_cnt, cy_cnt, score)
+        if area > best_area:
+            best_area = area
+            m = cv2.moments(cnt)
+            if m["m00"] > 0:
+                cx = m["m10"] / m["m00"]
+                cy = m["m01"] / m["m00"]
+                best = (cx, cy, area)
 
     if best is None:
         return None
 
-    # Normalize confidence to 0-1 range (rough scaling)
-    confidence = min(1.0, best[2] / 10000.0)
+    confidence = min(1.0, best[2] / 5000.0)
     return (best[0], best[1], confidence)
 
 
 def _detect_sc_port(bgr: np.ndarray) -> tuple[float, float, float] | None:
-    """Detect SC port candidates in a BGR image.
+    """Detect SC port candidates in a BGR image using COLOR detection.
 
-    SC ports are circular/cylindrical fiber optic connectors on the patch
-    panel. We look for circular features or small rectangular openings.
+    From camera images: SC ports appear as BLUE rectangular connectors
+    on the dark task board. Very distinctive color.
 
     Returns (centroid_x, centroid_y, confidence) or None.
     """
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
 
-    # Focus on the lower 70% of the image
-    roi_top = int(h * 0.2)
-    roi = gray[roi_top:, :]
+    # Blue color range in HSV (SC port)
+    # Blue: H=100-130, S=80-255, V=80-255
+    lower_blue = np.array([95, 60, 60])
+    upper_blue = np.array([135, 255, 255])
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
-    # Enhance contrast
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(roi)
+    # Clean up
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-    # Try circle detection first (Hough circles)
-    blurred = cv2.GaussianBlur(enhanced, (9, 9), 2)
-    circles = cv2.HoughCircles(
-        blurred,
-        cv2.HOUGH_GRADIENT,
-        dp=1.2,
-        minDist=30,
-        param1=100,
-        param2=40,
-        minRadius=8,
-        maxRadius=80,
-    )
-
-    if circles is not None:
-        circles = np.round(circles[0]).astype(int)
-        # Pick the circle closest to center of image
-        best_circle = None
-        best_dist = float("inf")
-        for cx_c, cy_c, r in circles:
-            cy_full = cy_c + roi_top
-            dist = math.sqrt((cx_c - w / 2) ** 2 + (cy_full - h / 2) ** 2)
-            if dist < best_dist:
-                best_dist = dist
-                best_circle = (float(cx_c), float(cy_full), float(r))
-
-        if best_circle is not None:
-            confidence = min(
-                1.0, best_circle[2] / 40.0
-            )  # Larger radius = more confident
-            return (best_circle[0], best_circle[1], confidence)
-
-    # Fallback: use edge/contour approach similar to SFP but with different params
-    edges = cv2.Canny(enhanced, 60, 160)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    edges = cv2.dilate(edges, kernel, iterations=1)
+    # Find contours of blue regions
     contours, _ = cv2.findContours(
-        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
 
+    if not contours:
+        return None
+
+    # Find the largest blue contour
     best = None
-    best_score = 0.0
+    best_area = 0
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < 100 or area > 30000:
+        if area < 50:
             continue
-
-        # SC connectors are closer to square/circular than SFP
-        rect = cv2.minAreaRect(cnt)
-        rect_w, rect_h = rect[1]
-        if rect_w == 0 or rect_h == 0:
-            continue
-
-        aspect = max(rect_w, rect_h) / min(rect_w, rect_h)
-        if aspect > 3.0:
-            continue
-
-        # Circularity
-        perimeter = cv2.arcLength(cnt, True)
-        circularity = (
-            4 * math.pi * area / (perimeter * perimeter) if perimeter > 0 else 0
-        )
-
-        cx_cnt = rect[0][0]
-        cy_cnt = rect[0][1] + roi_top
-        center_dist = abs(cx_cnt - w / 2) / w + abs(cy_cnt - h / 2) / h
-        score = area * (0.5 + circularity) * (1.0 - 0.3 * center_dist)
-
-        if score > best_score:
-            best_score = score
-            best = (cx_cnt, cy_cnt, score)
+        if area > best_area:
+            best_area = area
+            m = cv2.moments(cnt)
+            if m["m00"] > 0:
+                cx = m["m10"] / m["m00"]
+                cy = m["m01"] / m["m00"]
+                best = (cx, cy, area)
 
     if best is None:
         return None
 
-    confidence = min(1.0, best[2] / 8000.0)
+    confidence = min(1.0, best[2] / 3000.0)
     return (best[0], best[1], confidence)
 
 
