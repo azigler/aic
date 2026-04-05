@@ -4,6 +4,14 @@
 
 Competition entry for the [AI for Industry Challenge](https://www.intrinsic.ai/events/ai-for-industry-challenge/) ($180K prize pool). The task: train an AI policy to control a UR5e robot to insert fiber optic cables (SFP and SC connectors) into ports on a randomized task board. Evaluation is in Gazebo simulation.
 
+## Current Score
+
+**Best: 93.4** (exp-004 DirectApproach v2, Branch A1 Classical Control, 2026-04-04)
+
+Classical control has plateaued. Pivoting to Branch B (Camera Perception) to break
+through the XY alignment bottleneck. See `.claude/refs/experiment-log.md` for full
+leaderboard.
+
 ## Challenge Summary
 
 - **Robot:** UR5e + Robotiq Hand-E gripper + ATI F/T sensor + 3 wrist cameras
@@ -70,8 +78,8 @@ def insert_cable(self, task, get_observation, move_robot, send_feedback):
 - **Controller update rate:** 500 Hz (aic_ros2_controllers.yaml)
 - **Observation rate:** 20 Hz (aic_adapter, triggered by camera sync)
 - **FT sensor rate:** 50 Hz
-- **Cartesian velocity limits:** ±0.25 m/s translational, 2.0 rad/s rotational
-- **Max wrench (safety clamp):** ±10 N force, ±10 Nm torque
+- **Cartesian velocity limits:** +/-0.25 m/s translational, 2.0 rad/s rotational
+- **Max wrench (safety clamp):** +/-10 N force, +/-10 Nm torque
 - **Tracking error timeout:** 2.0s (controller resets if target unreachable)
 - **Nullspace control:** Disabled by default (stiffness=0), damping=10
 - **Controller starts in Cartesian mode** -- switch via service before sending joint commands
@@ -85,8 +93,8 @@ def insert_cable(self, task, get_observation, move_robot, send_feedback):
 - Joint order: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, gripper
 
 ### Observation Assembly (aic_adapter)
-- Cameras synchronized within ±1ms
-- Joint/wrench/controller state: finds most recent message ≤ image timestamp
+- Cameras synchronized within +/-1ms
+- Joint/wrench/controller state: finds most recent message <= image timestamp
 - Buffers: 128 messages per non-camera stream
 
 ## Development Commands
@@ -109,6 +117,16 @@ docker compose -f docker/docker-compose.yaml build model
 docker compose -f docker/docker-compose.yaml up
 ```
 
+**Important:** After changing policy code on the GPU instance, you must reinstall
+the package for changes to take effect:
+
+```bash
+pixi run pip install -e aic_example_policies  # or whichever package you edited
+```
+
+This is required because pixi uses editable installs and the ROS 2 launch picks
+up the installed entry point, not the source file directly.
+
 ## Tech Stack
 
 - **Language:** Python (policy), C++ (controller)
@@ -127,10 +145,14 @@ Every experiment gets a bead. Beads are the research log -- hypothesis, changes,
 results table, analysis, and next steps. See `/experiment` skill.
 
 **Exploration tree:**
-- Branch A: Classical (hardcoded -> vision -> force control) -- **start here**
-- Branch B: Imitation (demos -> ACT training)
+- Branch A: Classical (hardcoded -> vision -> force control) -- **plateaued at 93.4**
+- Branch B: Camera Perception (detect ports from images) -- **active, next up**
 - Branch C: Hybrid (vision + learned insertion)
 - Branch D: RL (Isaac Lab)
+
+**Current focus:** Branch B. Classical control cannot break past 93.4 because
+hardcoded XY offsets do not generalize across randomized board configurations.
+Camera-based port detection is required to close the ~5cm XY alignment gap.
 
 **Local scoring:** `docker compose -f docker/docker-compose.yaml up` runs headless
 eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud submit.
@@ -150,6 +172,7 @@ eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud s
 | `/spec` | Design documents for policy approaches |
 | `/review` | Experiment-driven design decisions |
 | `/release` | Docker submission workflow |
+| `/submit` | Cloud submission to official eval infrastructure |
 | `/beads` | Task tracking and research log |
 | `/commit` | Gitmoji commit conventions |
 | `/branch` | Branching strategy |
@@ -163,30 +186,6 @@ eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud s
 - `.claude/refs/experiment-log.md` -- score leaderboard
 - `.claude/refs/decisions.md` -- design decision log
 
-<<<<<<< HEAD
-## Remote Runner
-
-The eval stack runs in Docker (`docker compose up` with eval + model containers).
-A remote Linux machine with a GPU is the recommended way to speed up iteration.
-
-**Why Linux GPU, not macOS:**
-- The eval container (`ghcr.io/intrinsic-dev/aic/aic_eval`) is linux/amd64 only
-- Docker on macOS requires x86 emulation (Rosetta), which is slow and fragile
-- Native Gazebo on macOS fails: conda ogre2 crashes during Metal rendering init,
-  rosidl Python bindings have flat-namespace symbol issues, and macOS SIP blocks
-  the DYLD workarounds
-- Linux GPU (nvidia-container-toolkit) gives native Docker + GPU passthrough
-
-**How it works:**
-1. Scale up the VPS with a GPU (L4 or similar), or use any Linux box with Docker + nvidia GPU
-2. `rsync` code to remote
-3. `ssh` to run `docker compose -f docker/docker-compose.yaml up`
-4. `rsync` results back
-5. Analyze `scoring.yaml` locally
-
-**Configuration:** `scripts/runner-config.sh` defines remote host and SSH settings.
-`scripts/remote-eval.sh` orchestrates the rsync + eval + fetch cycle.
-=======
 ## Cloud GPU Runner (OVH L4-90)
 
 An OVH cloud GPU instance (NVIDIA L4, 24GB VRAM) serves as the remote eval,
@@ -202,16 +201,11 @@ exactly, eliminating sim-to-sim GPU discrepancy. Cost: ~$1.00/hr.
 
 **Configuration:** `scripts/runner-config.sh` defines `GPU_HOST` and SSH settings.
 An SSH config entry named `gpu` should exist in `~/.ssh/config`.
->>>>>>> worktree-agent-ab72a33a
 
 **Usage:**
 ```bash
 scripts/remote-eval.sh <policy_class>              # e.g. aic_example_policies.ros.BlindPush
-<<<<<<< HEAD
-scripts/remote-eval.sh <policy_class> <remote_host> # override host
-=======
 scripts/remote-eval.sh <policy_class> <gpu_host>   # override host (default: gpu)
->>>>>>> worktree-agent-ab72a33a
 ```
 
 **Performance comparison:**
@@ -219,11 +213,7 @@ scripts/remote-eval.sh <policy_class> <gpu_host>   # override host (default: gpu
 | Setup | Eval Time | Experiments/Hour |
 |-------|-----------|-----------------|
 | Local CPU-only (Docker) | ~27 min | ~2 |
-<<<<<<< HEAD
-| Linux GPU (L4, Docker) | ~5-8 min | ~8-10 |
-=======
 | Cloud GPU (L4) | ~5-10 min | ~6-12 |
->>>>>>> worktree-agent-ab72a33a
 
 **Training:** The L4 with 24GB VRAM and CUDA supports training directly on the
 instance (ACT batch 32-64, diffusion batch 16-32). See `/train` for details.
