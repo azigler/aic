@@ -2,6 +2,9 @@
 # OurACT: Run our trained SimpleACT model for cable insertion.
 # Loads model from ~/models/act_micro (or configured path).
 #
+# Outputs POSITION targets (7D: x,y,z,qx,qy,qz,qw) via set_pose_target,
+# matching the position-mode actions recorded by DataCollector.
+#
 
 import json
 import os
@@ -13,7 +16,6 @@ import time
 import cv2
 import numpy as np
 import torch
-from aic_control_interfaces.msg import MotionUpdate, TrajectoryGenerationMode
 from aic_model.policy import (
     GetObservationCallback,
     MoveRobotCallback,
@@ -21,8 +23,7 @@ from aic_model.policy import (
     SendFeedbackCallback,
 )
 from aic_task_interfaces.msg import Task
-from geometry_msgs.msg import Twist, Vector3, Wrench
-from std_msgs.msg import Header
+from geometry_msgs.msg import Point, Pose, Quaternion
 
 sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts")
@@ -31,6 +32,9 @@ from train_act import SimpleACT
 
 
 class OurACT(Policy):
+    # Default image size for inference (must match training resolution)
+    IMG_SIZE = 256
+
     def __init__(self, parent_node):
         super().__init__(parent_node)
         self.device = torch.device(
@@ -42,6 +46,15 @@ class OurACT(Policy):
             "ACT_MODEL_DIR", os.path.expanduser("~/models/act_micro")
         )
         self.get_logger().info(f"Loading ACT model from {model_dir}")
+
+        # Read image size from model config if available, else use default
+        config_path = os.path.join(model_dir, "config.json")
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                config = json.load(f)
+            self.img_size = config.get("img_size", self.IMG_SIZE)
+        else:
+            self.img_size = self.IMG_SIZE
 
         # Load normalization stats
         stats_path = os.path.join(model_dir, "normalization_stats.json")
@@ -77,7 +90,9 @@ class OurACT(Policy):
             }
 
         # Load model
-        self.model = SimpleACT(state_dim=26, action_dim=7, chunk_size=50)
+        self.model = SimpleACT(
+            state_dim=26, action_dim=7, chunk_size=50, img_size=self.img_size
+        )
         checkpoint = torch.load(
             os.path.join(model_dir, "best_model.pt"), map_location=self.device
         )
@@ -92,7 +107,9 @@ class OurACT(Policy):
         img = np.frombuffer(img_msg.data, dtype=np.uint8).reshape(
             img_msg.height, img_msg.width, 3
         )
-        img = cv2.resize(img, (256, 256), interpolation=cv2.INTER_AREA)
+        img = cv2.resize(
+            img, (self.img_size, self.img_size), interpolation=cv2.INTER_AREA
+        )
         tensor = (
             torch.from_numpy(img)
             .permute(2, 0, 1)
@@ -160,39 +177,37 @@ class OurACT(Policy):
             with torch.inference_mode():
                 action_norm = self.model(img_left, img_center, img_right, state)
 
-            # Un-normalize action
+            # Un-normalize action: 7D position target [x,y,z,qx,qy,qz,qw]
             action = (
                 (action_norm[0] * self.action_std + self.action_mean)
                 .cpu()
                 .numpy()
             )
 
-            # Send velocity command
-            motion = MotionUpdate()
-            motion.header = Header(
-                frame_id="base_link",
-                stamp=self.get_clock().now().to_msg(),
-            )
-            motion.velocity = Twist(
-                linear=Vector3(
-                    x=float(action[0]), y=float(action[1]), z=float(action[2])
+            # Normalize quaternion to ensure unit length
+            quat = action[3:7]
+            quat_norm = np.linalg.norm(quat)
+            if quat_norm > 1e-6:
+                quat = quat / quat_norm
+            else:
+                quat = np.array([0.0, 0.0, 0.0, 1.0])
+
+            # Send position target via set_pose_target (uses MODE_POSITION)
+
+            target_pose = Pose(
+                position=Point(
+                    x=float(action[0]),
+                    y=float(action[1]),
+                    z=float(action[2]),
                 ),
-                angular=Vector3(
-                    x=float(action[3]), y=float(action[4]), z=float(action[5])
+                orientation=Quaternion(
+                    x=float(quat[0]),
+                    y=float(quat[1]),
+                    z=float(quat[2]),
+                    w=float(quat[3]),
                 ),
             )
-            motion.target_stiffness = np.diag(
-                [100.0, 100.0, 100.0, 50.0, 50.0, 50.0]
-            ).flatten()
-            motion.target_damping = np.diag(
-                [40.0, 40.0, 40.0, 15.0, 15.0, 15.0]
-            ).flatten()
-            motion.feedforward_wrench_at_tip = Wrench()
-            motion.wrench_feedback_gains_at_tip = [0.5, 0.5, 0.5, 0.0, 0.0, 0.0]
-            motion.trajectory_generation_mode.mode = (
-                TrajectoryGenerationMode.MODE_VELOCITY
-            )
-            move_robot(motion_update=motion)
+            self.set_pose_target(move_robot, pose=target_pose)
 
             if step % 20 == 0:
                 self.get_logger().info(
