@@ -18,3 +18,7 @@ af15a58	98.4	420	keep	B	exp-012b: calibrated transform + limited servo (40% desc
 1cd70c6	84.5	420	keep	B	exp-013d: reverted to original config (verify baseline)
 37adea6	43.7	420	discard	B	exp-014: close-range visual servo diverged
 37adea6	85.0	420	discard	B	exp-015: larger spiral (24mm), no close vision
+69d2d49	86.5	360	discard	B	exp-016: speed optimized (1mm steps, shorter sleeps), still 21s
+69d2d49	40.8	420	discard	B	exp-017a: IBVS diverged -- wrong signs
+69d2d49	48.9	420	discard	B	exp-017b: IBVS Y converges but X diverges
+69d2d49	110.4	420	best	B	exp-017c: IBVS both signs fixed -- NEW HIGH! SC improved to 8cm
