@@ -30,3 +30,4 @@ b1951cf	86.3	420	discard	B	exp-019: mid-descent IBVS correction
 b1951cf	86.2	420	keep	B	exp-020: variance test of averaged IBVS
 e9453a3	99.9	420	keep	B	exp-021: cleaned IBVS, partial insertion T1
 2071997	86.9	420	discard	B	exp-022: 10x pixel gain, T2 overshot
+aba795a	-21	480	discard	C	exp-023: RunACT pre-trained model -- penalties, wrong sim config
