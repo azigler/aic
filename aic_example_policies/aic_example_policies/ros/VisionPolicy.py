@@ -56,7 +56,9 @@ class VisionPolicy(Policy):
                 )
             self.sleep_for(0.05)
 
-    def _detect_port_from_obs(self, obs, port_type: str):
+    def _detect_port_from_obs(
+        self, obs, port_type: str, port_name: str = "sfp_port_0"
+    ):
         """Run port detection on the center camera image.
 
         Returns (dx, dy, dz) in camera optical frame or None.
@@ -70,7 +72,8 @@ class VisionPolicy(Policy):
             port_type=port_type,
             camera_info=obs.center_camera_info,
             frame_id=self._frame_counter,
-            save_debug=(self._frame_counter % 10 == 1),  # Save every 10th frame
+            save_debug=(self._frame_counter % 10 == 1),
+            port_name=port_name,
         )
         return result
 
@@ -158,7 +161,9 @@ class VisionPolicy(Policy):
                 self.sleep_for(0.1)
                 continue
 
-            cam_offset = self._detect_port_from_obs(obs, task.plug_type)
+            cam_offset = self._detect_port_from_obs(
+                obs, task.plug_type, task.port_name
+            )
             if cam_offset is not None:
                 dx_base, dy_base = self._camera_offset_to_base_xy(
                     cam_offset, obs.controller_state.tcp_pose
@@ -223,7 +228,9 @@ class VisionPolicy(Policy):
                 and i % servo_interval == 0
                 and total_descent < max_descent * 0.7
             ):
-                cam_offset = self._detect_port_from_obs(obs, task.plug_type)
+                cam_offset = self._detect_port_from_obs(
+                    obs, task.plug_type, task.port_name
+                )
                 if cam_offset is not None:
                     dx_base, dy_base = self._camera_offset_to_base_xy(
                         cam_offset, obs.controller_state.tcp_pose

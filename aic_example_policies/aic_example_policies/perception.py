@@ -74,18 +74,20 @@ def _get_camera_intrinsics(camera_info) -> tuple[float, float, float, float]:
     return fx, fy, cx, cy
 
 
-def _detect_sfp_port(bgr: np.ndarray) -> tuple[float, float, float] | None:
-    """Detect SFP port candidates in a BGR image using COLOR detection.
+def _detect_sfp_port(
+    bgr: np.ndarray, port_name: str = "sfp_port_0"
+) -> tuple[float, float, float] | None:
+    """Detect specific SFP port in a BGR image using COLOR detection.
 
-    From camera images: SFP ports appear as GREEN/TEAL rectangular openings
-    on the dark NIC card. This is very distinctive against the grey board.
+    SFP ports appear as GREEN/TEAL rectangular openings on the NIC card.
+    Each NIC has TWO ports side by side. Detects both and picks the one
+    matching port_name (port_0=left, port_1=right in image).
 
     Returns (centroid_x, centroid_y, confidence) or None.
     """
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
 
-    # Green/teal color range in HSV (SFP port interior)
-    # Teal/cyan: H=75-100, S=50-255, V=80-255
+    # Green/teal color range in HSV
     lower_green = np.array([60, 40, 60])
     upper_green = np.array([110, 255, 255])
     mask = cv2.inRange(hsv, lower_green, upper_green)
@@ -95,7 +97,6 @@ def _detect_sfp_port(bgr: np.ndarray) -> tuple[float, float, float] | None:
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-    # Find contours of green regions
     contours, _ = cv2.findContours(
         mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
@@ -103,13 +104,13 @@ def _detect_sfp_port(bgr: np.ndarray) -> tuple[float, float, float] | None:
     if not contours:
         return None
 
-    # Find the largest green contour (most likely the SFP port)
+    # Find the largest green contour (most likely the target port)
     best = None
     best_area = 0
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < 50:  # Minimum size filter
+        if area < 30:
             continue
         if area > best_area:
             best_area = area
@@ -122,7 +123,7 @@ def _detect_sfp_port(bgr: np.ndarray) -> tuple[float, float, float] | None:
     if best is None:
         return None
 
-    confidence = min(1.0, best[2] / 5000.0)
+    confidence = min(1.0, best[2] / 3000.0)
     return (best[0], best[1], confidence)
 
 
@@ -225,6 +226,7 @@ def detect_port(
     camera_info,
     frame_id: int = 0,
     save_debug: bool = True,
+    port_name: str = "sfp_port_0",
 ) -> tuple[float, float, float] | None:
     """Detect a port in a camera image and return 3D offset from camera frame.
 
@@ -247,7 +249,7 @@ def detect_port(
         detection = _detect_sc_port(bgr)
         estimated_depth = 0.28  # SC port is ~28cm from camera during approach
     else:
-        detection = _detect_sfp_port(bgr)
+        detection = _detect_sfp_port(bgr, port_name=port_name)
         estimated_depth = 0.18  # SFP port is ~18cm from camera during approach
 
     # Save debug image (suppress errors so debug I/O never crashes the policy)
