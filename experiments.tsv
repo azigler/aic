@@ -1,0 +1,12 @@
+commit	score	time_s	status	branch	description
+-	3.0	1641	discard	A0	exp-001 BlindPush: force threshold too low, didn't move
+-	3.0	-	discard	A1	exp-002 SmartApproach: moved UP not down (wrong axis)
+-	78.4	-	keep	A1	exp-003 DirectApproach v1: first -Z descent, proximity points
+a1b2c3d	93.4	-	best	A1	exp-004 DirectApproach v2: PARTIAL INSERTION on trial 1
+-	83.3	-	discard	A1	exp-005 DirectApproach v3: wider spiral, slower = worse
+-	89.3	-	discard	A1	exp-006 DirectApproach v4: faster steps, lost partial insertion
+-	81.6	-	discard	A2	exp-007 Diagnostic: identified 5cm XY offset as bottleneck
+-	79.9	-	discard	A2	exp-008 XY correction: hardcoded offsets don't generalize
+-	98.5	-	best	B	exp-010 VisionPolicy: color detection (green=SFP, blue=SC)
+-	57.4	-	discard	B	exp-011a Higher force limit: pushed too deep past port
+-	76.0	-	discard	B	exp-011b Per-port detection: wrong port selected
