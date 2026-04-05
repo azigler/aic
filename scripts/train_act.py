@@ -8,8 +8,8 @@ Observation space (matching RunACT.prepare_observations):
   - 3 cameras at 256x256 (left, center, right)
   - 26D robot state
 
-Action space (matching RunACT velocity mode):
-  - 7D: linear velocity (3) + angular velocity (3) + gripper (1)
+Action space (position mode):
+  - 7D: TCP position xyz (3) + quaternion xyzw (4)
 
 Usage:
   pixi run python scripts/train_act.py --data-dir ~/training_data --output-dir ~/models/act_v1
@@ -85,6 +85,12 @@ def parse_args():
         default=42,
         help="Random seed for reproducibility",
     )
+    parser.add_argument(
+        "--img-size",
+        type=int,
+        default=256,
+        help="Image resolution for training (default 256)",
+    )
     return parser.parse_args()
 
 
@@ -104,8 +110,14 @@ class DemoDataset(Dataset):
     datasets.
     """
 
-    def __init__(self, episode_dirs: list[Path], chunk_size: int = 50):
+    def __init__(
+        self,
+        episode_dirs: list[Path],
+        chunk_size: int = 50,
+        img_size: int = 256,
+    ):
         self.chunk_size = chunk_size
+        self.img_size = img_size
         self.samples: list[
             tuple[Path, int, int]
         ] = []  # (episode_dir, timestep, ep_len)
@@ -137,7 +149,9 @@ class DemoDataset(Dataset):
                 img_np = np.load(img_path)
             else:
                 # Fallback: black image
-                img_np = np.zeros((256, 256, 3), dtype=np.uint8)
+                img_np = np.zeros(
+                    (self.img_size, self.img_size, 3), dtype=np.uint8
+                )
             # HWC uint8 -> CHW float [0,1]
             img_tensor = (
                 torch.from_numpy(img_np).permute(2, 0, 1).float().div(255.0)
@@ -418,13 +432,27 @@ def train(args):
     for k, v in stats.items():
         print(f"  {k}: mean={v.mean().item():.4f}, shape={tuple(v.shape)}")
 
-    # Save stats for inference
+    # Save stats and config for inference
     args.output_dir.mkdir(parents=True, exist_ok=True)
     torch.save(stats, args.output_dir / "normalization_stats.pt")
 
+    # Save model config so OurACT can read img_size at inference time
+    model_config = {
+        "state_dim": 26,
+        "action_dim": 7,
+        "chunk_size": args.chunk_size,
+        "img_size": args.img_size,
+    }
+    with open(args.output_dir / "config.json", "w") as f:
+        json.dump(model_config, f, indent=2)
+
     # Datasets
-    train_dataset = DemoDataset(train_dirs, chunk_size=args.chunk_size)
-    val_dataset = DemoDataset(val_dirs, chunk_size=args.chunk_size)
+    train_dataset = DemoDataset(
+        train_dirs, chunk_size=args.chunk_size, img_size=args.img_size
+    )
+    val_dataset = DemoDataset(
+        val_dirs, chunk_size=args.chunk_size, img_size=args.img_size
+    )
     print(
         f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}"
     )
@@ -459,6 +487,7 @@ def train(args):
             state_dim=26,
             action_dim=7,
             chunk_size=args.chunk_size,
+            img_size=args.img_size,
         )
         model.to(device)
 
