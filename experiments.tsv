@@ -16,3 +16,5 @@ af15a58	98.4	420	keep	B	exp-012b: calibrated transform + limited servo (40% desc
 1cd70c6	60.1	420	discard	B	exp-013b: depth=0.22m, still overcompensated
 1cd70c6	78.8	420	discard	B	exp-013c: no servo at all, lost alignment
 1cd70c6	84.5	420	keep	B	exp-013d: reverted to original config (verify baseline)
+37adea6	43.7	420	discard	B	exp-014: close-range visual servo diverged
+37adea6	85.0	420	discard	B	exp-015: larger spiral (24mm), no close vision

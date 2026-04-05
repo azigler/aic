@@ -263,31 +263,35 @@ class VisionPolicy(Policy):
         )
 
         # ------------------------------------------------------------------
-        # Phase 3: Spiral search (same as DirectApproach)
+        # Phase 3: Large spiral search + compliant descent
         # ------------------------------------------------------------------
-        self.get_logger().info("Phase 3: Spiral search")
+        # Vision only for initial alignment. At close range, rely on
+        # spiral search + force feedback. Larger spiral than before.
+        self.get_logger().info("Phase 3: Spiral search + compliant push")
 
-        spiral_stiff = [50.0, 50.0, 40.0, 30.0, 30.0, 30.0]
-        spiral_damp = [40.0, 40.0, 35.0, 20.0, 20.0, 20.0]
+        insert_stiff = [40.0, 40.0, 25.0, 25.0, 25.0, 25.0]
+        insert_damp = [35.0, 35.0, 25.0, 18.0, 18.0, 18.0]
+
         center_x = target_x
         center_y = target_y
         spiral_z = target_z
 
-        for ring in range(1, 6):
-            radius = ring * 0.002
-            points = max(8, ring * 8)
+        # Larger spiral: 8 rings, 3mm per ring, max radius 24mm
+        for ring in range(1, 9):
+            radius = ring * 0.003
+            points = max(12, ring * 6)
             for p in range(points):
                 angle = 2 * math.pi * p / points
                 sx = center_x + radius * math.cos(angle)
                 sy = center_y + radius * math.sin(angle)
-                spiral_z -= 0.0001
+                spiral_z -= 0.00015  # Gentle descent during spiral
 
                 obs = get_observation()
                 if obs is None:
                     continue
                 rel_f = self._get_force(obs) - baseline
                 if rel_f > force_limit:
-                    self.sleep_for(0.04)
+                    self.sleep_for(0.03)
                     continue
 
                 pose = Pose(
@@ -297,30 +301,23 @@ class VisionPolicy(Policy):
                 self.set_pose_target(
                     move_robot=move_robot,
                     pose=pose,
-                    stiffness=spiral_stiff,
-                    damping=spiral_damp,
+                    stiffness=insert_stiff,
+                    damping=insert_damp,
                 )
-                self.sleep_for(0.04)
+                self.sleep_for(0.03)
 
-        # ------------------------------------------------------------------
-        # Phase 4: Compliant push (same as DirectApproach)
-        # ------------------------------------------------------------------
-        self.get_logger().info("Phase 4: Compliant push")
-
-        insert_stiff = [40.0, 40.0, 25.0, 20.0, 20.0, 20.0]
-        insert_damp = [35.0, 35.0, 25.0, 15.0, 15.0, 15.0]
+        # Final compliant push straight down
         final_z = spiral_z
-
-        for _ in range(200):
+        for _ in range(150):
             obs = get_observation()
             if obs is None:
                 continue
             rel_f = self._get_force(obs) - baseline
             if rel_f > force_limit:
-                self.sleep_for(0.04)
+                self.sleep_for(0.03)
                 continue
 
-            final_z -= 0.0003
+            final_z -= 0.0004
             pose = Pose(
                 position=Point(x=center_x, y=center_y, z=final_z),
                 orientation=start_pose.orientation,
@@ -331,7 +328,7 @@ class VisionPolicy(Policy):
                 stiffness=insert_stiff,
                 damping=insert_damp,
             )
-            self.sleep_for(0.04)
+            self.sleep_for(0.03)
 
         # Log final position
         obs = get_observation()
