@@ -84,15 +84,24 @@ class IBVSPolicy(Policy):
         orientation = tcp.orientation
 
         # Pixel-to-meters gain: how many meters to move per pixel of error
-        # At ~18cm distance, 1 pixel ≈ 0.16mm (from FOV and resolution)
-        # We want to be conservative, so use a smaller gain
-        pixel_gain = 0.00008  # meters per pixel
+        # Reduced from 0.00008 to prevent oscillation
+        pixel_gain = 0.00004  # meters per pixel (halved for stability)
 
         stiffness = [90.0, 90.0, 70.0, 50.0, 50.0, 50.0]
         damping = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]
 
+        # Collect pixel errors from multiple frames, then apply ONE averaged correction
+        # This avoids the oscillation from real-time IBVS feedback
         frame_counter = 0
-        for iteration in range(30):  # Max 30 servo iterations
+        corrections_dx = []
+        corrections_dy = []
+
+        fx = ci.k[0]
+        fy = ci.k[4]
+        cx_k = ci.k[2]
+        cy_k = ci.k[5]
+
+        for iteration in range(10):
             obs = get_observation()
             if obs is None:
                 self.sleep_for(0.05)
@@ -109,54 +118,33 @@ class IBVSPolicy(Policy):
             )
 
             if detection is None:
-                self.get_logger().info(f"IBVS iter {iteration}: no detection")
                 self.sleep_for(0.1)
                 continue
 
-            # detection returns (dx_cam, dy_cam, dz_cam) in camera frame meters
-            # But we want pixel error. Let me use the raw pixel position instead.
-            # The detect_port function converts pixels to meters, but for IBVS
-            # we want the pixel error from center.
-            # Reconstruct pixel position from camera offset:
-            fx = ci.k[0]
-            fy = ci.k[4]
-            cx = ci.k[2]
-            cy = ci.k[5]
-
-            # detection = (dx_cam, dy_cam, dz_cam) where dx_cam = (pixel_x - cx) * dz / fx
-            # So pixel_x = dx_cam * fx / dz + cx
-            dz = detection[2]
-            if abs(dz) < 0.01:
-                dz = 0.18
-            pixel_x = detection[0] * fx / dz + cx
-            pixel_y = detection[1] * fy / dz + cy
-
-            # Pixel error from image center
+            dz = detection[2] if abs(detection[2]) > 0.01 else 0.18
+            pixel_x = detection[0] * fx / dz + cx_k
+            pixel_y = detection[1] * fy / dz + cy_k
             err_px = pixel_x - img_cx
             err_py = pixel_y - img_cy
 
+            corrections_dx.append(err_py * pixel_gain)  # image Y -> base X
+            corrections_dy.append(-err_px * pixel_gain)  # image X -> base -Y
+
             self.get_logger().info(
-                f"IBVS iter {iteration}: pixel=({pixel_x:.0f},{pixel_y:.0f}) "
-                f"err=({err_px:.0f},{err_py:.0f})"
+                f"IBVS sample {iteration}: err=({err_px:.0f},{err_py:.0f})"
             )
+            self.sleep_for(0.1)
 
-            # If error is small enough, we're centered
-            if abs(err_px) < 15 and abs(err_py) < 15:
-                self.get_logger().info("Port centered! Moving to descent.")
-                break
-
-            # Move TCP to reduce pixel error
-            # From data: err_px=17 means port is right of center -> move TCP right (+Y base)
-            # err_py=-36 means port is above center -> move TCP forward (-X base)
-            # Gains reduced to prevent overshoot
-            move_dx = err_py * pixel_gain * 0.5  # image Y -> base X (converges)
-            move_dy = (
-                -err_px * pixel_gain * 0.5
-            )  # image X -> base -Y (flip X sign)
-
-            current_x += move_dx
-            current_y += move_dy
-
+        # Apply averaged correction ONCE
+        if corrections_dx:
+            avg_dx = sum(corrections_dx) / len(corrections_dx)
+            avg_dy = sum(corrections_dy) / len(corrections_dy)
+            current_x += avg_dx
+            current_y += avg_dy
+            self.get_logger().info(
+                f"IBVS correction: ({avg_dx:.4f},{avg_dy:.4f}) "
+                f"from {len(corrections_dx)} samples"
+            )
             pose = Pose(
                 position=Point(x=current_x, y=current_y, z=current_z),
                 orientation=orientation,
@@ -167,7 +155,7 @@ class IBVSPolicy(Policy):
                 stiffness=stiffness,
                 damping=damping,
             )
-            self.sleep_for(0.15)  # Wait for arm to move before next image
+            self.sleep_for(0.5)
 
         # Phase 2: Descent with spiral search
         self.get_logger().info("Phase 2: Descent + spiral")
