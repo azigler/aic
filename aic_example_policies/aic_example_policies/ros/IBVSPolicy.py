@@ -85,7 +85,7 @@ class IBVSPolicy(Policy):
 
         # Pixel-to-meters gain: how many meters to move per pixel of error
         # Reduced from 0.00008 to prevent oscillation
-        pixel_gain = 0.00004  # meters per pixel (halved for stability)
+        pixel_gain = 0.00004  # meters per pixel
 
         stiffness = [90.0, 90.0, 70.0, 50.0, 50.0, 50.0]
         damping = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]

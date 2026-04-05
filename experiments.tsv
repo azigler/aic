@@ -29,3 +29,4 @@ ada2cc4	100.1	420	best	B	exp-018b: averaged IBVS -- broke 100! Partial insertion
 b1951cf	86.3	420	discard	B	exp-019: mid-descent IBVS correction
 b1951cf	86.2	420	keep	B	exp-020: variance test of averaged IBVS
 e9453a3	99.9	420	keep	B	exp-021: cleaned IBVS, partial insertion T1
+2071997	86.9	420	discard	B	exp-022: 10x pixel gain, T2 overshot
