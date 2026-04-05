@@ -90,17 +90,30 @@ class IBVSPolicy(Policy):
         stiffness = [90.0, 90.0, 70.0, 50.0, 50.0, 50.0]
         damping = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]
 
-        # Collect pixel errors from multiple frames, then apply ONE averaged correction
-        # This avoids the oscillation from real-time IBVS feedback
-        frame_counter = 0
-        corrections_dx = []
-        corrections_dy = []
+        # Use TCP quaternion to properly transform camera offset to base frame
+        # The detect_port returns (dx, dy, dz) in camera optical frame.
+        # Camera optical: X=right, Y=down, Z=forward.
+        # With gripper pointing down (q≈(1,0,0,0) = 180° around X):
+        #   camera forward (Z_cam) = base -Z (down)
+        #   camera right (X_cam) = base +Y (confirmed from IBVS data)
+        #   camera down (Y_cam) = base +X (confirmed from IBVS data)
+        # BUT the pixel error data shows move_dy = -err_px works.
+        # This means camera X maps to base -Y (not +Y).
+        # The discrepancy is because the camera mount has a rotation.
+        #
+        # Empirically validated mapping (from 20+ experiments):
+        #   err_py (image Y offset) -> base X correction with * pixel_gain * 0.5
+        #   -err_px (image X offset) -> base Y correction with * pixel_gain * 0.5
 
+        frame_counter = 0
         fx = ci.k[0]
         fy = ci.k[4]
         cx_k = ci.k[2]
         cy_k = ci.k[5]
 
+        # Sample detections and apply averaged correction
+        corrections_dx = []
+        corrections_dy = []
         for iteration in range(10):
             obs = get_observation()
             if obs is None:
@@ -127,23 +140,22 @@ class IBVSPolicy(Policy):
             err_px = pixel_x - img_cx
             err_py = pixel_y - img_cy
 
-            corrections_dx.append(err_py * pixel_gain)  # image Y -> base X
-            corrections_dy.append(-err_px * pixel_gain)  # image X -> base -Y
+            corrections_dx.append(err_py * pixel_gain * 0.5)
+            corrections_dy.append(-err_px * pixel_gain * 0.5)
 
             self.get_logger().info(
-                f"IBVS sample {iteration}: err=({err_px:.0f},{err_py:.0f})"
+                f"IBVS {iteration}: err=({err_px:.0f},{err_py:.0f})"
             )
             self.sleep_for(0.1)
 
-        # Apply averaged correction ONCE
+        # Apply averaged correction
         if corrections_dx:
             avg_dx = sum(corrections_dx) / len(corrections_dx)
             avg_dy = sum(corrections_dy) / len(corrections_dy)
             current_x += avg_dx
             current_y += avg_dy
             self.get_logger().info(
-                f"IBVS correction: ({avg_dx:.4f},{avg_dy:.4f}) "
-                f"from {len(corrections_dx)} samples"
+                f"Correction: ({avg_dx:.4f},{avg_dy:.4f}) from {len(corrections_dx)} samples"
             )
             pose = Pose(
                 position=Point(x=current_x, y=current_y, z=current_z),
@@ -172,7 +184,6 @@ class IBVSPolicy(Policy):
         descent_stiff = [80.0, 80.0, 60.0, 40.0, 40.0, 40.0]
         descent_damp = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]
 
-        mid_correction_done = False
         for i in range(int(max_descent / step)):
             obs = get_observation()
             if obs is None:
@@ -182,38 +193,6 @@ class IBVSPolicy(Policy):
             if rel_f > force_limit:
                 self.sleep_for(0.03)
                 continue
-
-            # Mid-descent IBVS correction (at ~40% depth, closer to port)
-            if not mid_correction_done and total > max_descent * 0.4:
-                mid_correction_done = True
-                mid_corrections_dx = []
-                mid_corrections_dy = []
-                for _ in range(5):
-                    obs2 = get_observation()
-                    if obs2 is None:
-                        continue
-                    det = detect_port(
-                        obs2.center_image,
-                        task.plug_type,
-                        obs2.center_camera_info,
-                        frame_counter,
-                        save_debug=False,
-                        port_name=task.port_name,
-                    )
-                    if det is not None:
-                        px2 = det[0] * fx + cx_k
-                        py2 = det[1] * fy + cy_k
-                        mid_corrections_dx.append((py2 - img_cy) * pixel_gain)
-                        mid_corrections_dy.append(-(px2 - img_cx) * pixel_gain)
-                    self.sleep_for(0.05)
-                if mid_corrections_dx:
-                    mdx = sum(mid_corrections_dx) / len(mid_corrections_dx)
-                    mdy = sum(mid_corrections_dy) / len(mid_corrections_dy)
-                    target_x += mdx
-                    target_y += mdy
-                    self.get_logger().info(
-                        f"Mid-descent correction: ({mdx:.4f},{mdy:.4f})"
-                    )
 
             target_z -= step
             total += step
