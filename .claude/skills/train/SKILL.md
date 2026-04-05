@@ -1,77 +1,52 @@
 ---
 name: train
-description: ML training loop for cable insertion policies -- data collection, training, and experiment management
-argument-hint: "[collect|train|checkpoint|compare]"
+description: ACT training pipeline -- data collection, model training, hyperparameter tuning, and evaluation
+argument-hint: "[collect|train|eval|tune|status]"
 ---
 
-# /train - Policy Training
+# /train - ACT Training Pipeline
 
-Orchestrate training loops for cable insertion policies. This skill covers data
-collection, model training, checkpointing, and experiment tracking.
+The **primary skill** for score improvement. After 24 experiments, classical control
+(Branch A, plateau 93.4) and camera perception (Branch B, plateau ~100) are exhausted.
+ACT imitation learning (Branch C) is the path forward.
 
-## Training Approaches
+## Overview
 
-### 1. Imitation Learning (ACT / Diffusion Policy)
+```
+COLLECT DEMOS -> TRAIN MODEL -> EVALUATE -> TUNE CONFIG -> REPEAT
+     (~30 min)     (~1-2 hrs)     (~10 min)     (analysis)
+```
 
-The primary approach: learn from demonstrations.
+Each full cycle takes ~2-3 hours on the L4 GPU. The iteration variable is the
+training config, not the policy source code. The RunACT policy code stays fixed.
 
-**Data collection:**
-1. Launch sim with ground truth enabled (`/sim launch` with `ground_truth:=true`)
-2. Teleoperate the robot to perform insertions
-3. Record observation-action pairs at 20Hz
-4. Vary task board configurations for domain randomization
+## Step 1: Collect Demonstrations
 
-**Observation space (per timestep):**
-- 3x camera images (1152x1024 RGB) -- may need resizing for model input
-- 6 joint positions + 1 gripper position
-- 6D wrench (force + torque)
-- TCP pose (position + quaternion)
-- TCP velocity (linear + angular)
+Demonstrations are collected by running CheatCode (the ground-truth expert) with
+domain randomization. Data is stored on the GPU instance.
 
-**Action space:**
-- Cartesian: 6D pose (position + quaternion) or 6D velocity (linear + angular)
-- Joint: 6 joint positions or 6 joint velocities
-- Stiffness/damping parameters (optional, can be fixed)
-
-**Key training parameters for ACT:**
-- Chunk size: number of future actions predicted at once (typically 10-100)
-- Camera image resolution: downsample for speed (224x224 typical)
-- Learning rate: ~1e-4 with cosine schedule
-- Batch size: 32-128 depending on GPU memory
-
-### 2. Reinforcement Learning
-
-Alternative: learn from reward signal.
-
-**Reward shaping for cable insertion:**
-- Distance to target port (dense, proximity reward)
-- Alignment with port axis (orientation reward)
-- Successful insertion (sparse, large bonus)
-- Force penalty (penalize excessive contact force)
-- Smoothness penalty (penalize jerk)
-
-**Recommended RL framework:** Isaac Lab (GPU-parallel) or MuJoCo (fast CPU)
-
-### 3. Classical Control + Perception
-
-Hybrid approach: use ML for perception, classical control for insertion.
-
-- Vision model: detect port location from camera images
-- Estimate port pose in TCP frame
-- Spiral search + compliant insertion controller
-- Impedance control with force feedback for final insertion
-
-## Data Collection Workflow
-
-### 1. Collect Demonstrations via Teleoperation
+### Automated Collection
 
 ```bash
-# Terminal 1: Launch sim
-distrobox enter -r aic_eval -- /entrypoint.sh \
-  ground_truth:=true start_aic_engine:=false \
-  spawn_task_board:=true spawn_cable:=true attach_cable_to_gripper:=true
+# On GPU instance
+ssh gpu
+cd ~/ws_aic/src/aic
+scripts/collect_demos.sh --num-demos 100 --output-dir ~/training_data/batch_001
+```
 
-# Terminal 2: Record (implement your own recorder or use rosbag)
+### Manual Collection (CheatCode)
+
+```bash
+# Terminal 1: Sim + engine
+distrobox enter -r aic_eval -- /entrypoint.sh \
+  ground_truth:=true start_aic_engine:=true
+
+# Terminal 2: CheatCode policy
+pixi run ros2 run aic_model aic_model --ros-args \
+  -p use_sim_time:=true \
+  -p policy:=aic_example_policies.ros.CheatCode
+
+# Terminal 3: Record
 pixi run ros2 bag record \
   /left_camera/image /center_camera/image /right_camera/image \
   /joint_states /gripper_state \
@@ -82,71 +57,176 @@ pixi run ros2 bag record \
   -o ~/training_data/demo_001
 ```
 
-### 2. Collect via CheatCode Policy
+### Domain Randomization
 
-Use CheatCode as an expert demonstrator:
-
-```bash
-# Terminal 1: Sim + engine
-distrobox enter -r aic_eval -- /entrypoint.sh \
-  ground_truth:=true start_aic_engine:=true
-
-# Terminal 2: CheatCode policy (record its actions)
-pixi run ros2 run aic_model aic_model --ros-args \
-  -p use_sim_time:=true \
-  -p policy:=aic_example_policies.ros.CheatCode
-
-# Terminal 3: Record
-pixi run ros2 bag record -a -o ~/training_data/cheatcode_demo_001
-```
-
-### 3. Domain Randomization
-
-Vary these parameters across collection runs:
+Vary these parameters across collection runs for generalization:
 - Task board position (`task_board_x/y/z/yaw`)
 - NIC card rail and offset
 - SC port position
 - Grasp pose noise (~2mm, ~0.04 rad as in evaluation)
 
-## Experiment Tracking
+### Data Guidelines
 
-### Directory Structure
+| Quantity | Expected Quality | Notes |
+|----------|-----------------|-------|
+| 50 demos | Minimum viable | May overfit to seen configs |
+| 100 demos | Good baseline | Reasonable generalization |
+| 200 demos | Strong | Covers most board configurations |
+| 500 demos | Comprehensive | Diminishing returns beyond this |
+
+Data lives in `~/training_data/` on the GPU instance.
+
+## Step 2: Train ACT Model
+
+### Command Reference
+
+```bash
+# Basic training
+ssh gpu "cd ~/ws_aic/src/aic && scripts/train_act.py \
+  --data-dir ~/training_data \
+  --output-dir ~/models/exp-NNN \
+  --chunk-size 50 \
+  --lr 1e-4 \
+  --batch-size 32 \
+  --epochs 100"
+
+# Resume from checkpoint
+ssh gpu "cd ~/ws_aic/src/aic && scripts/train_act.py \
+  --data-dir ~/training_data \
+  --output-dir ~/models/exp-NNN \
+  --resume ~/models/exp-NNN/checkpoints/epoch_050.pt \
+  --epochs 100"
+
+# Or run training directly on the GPU
+ssh gpu
+cd ~/ws_aic/src/aic
+pixi run python scripts/train_act.py --batch-size 32 --epochs 100
+```
+
+### Hyperparameter Guide
+
+| Parameter | Default | Range | Effect |
+|-----------|---------|-------|--------|
+| `chunk_size` | 50 | 10-100 | Larger = smoother but less reactive |
+| `lr` | 1e-4 | 1e-5 to 1e-3 | Standard with cosine schedule |
+| `batch_size` | 32 | 32-64 | Limited by L4 VRAM (24GB) |
+| `epochs` | 100 | 50-500 | More epochs if more data |
+| `img_size` | 224 | 128-320 | Larger = more detail but slower |
+| `num_cameras` | 3 | 1-3 | More = better perception, more VRAM |
+| `kl_weight` | 10 | 1-100 | Higher = more regularized latent space |
+| `hidden_dim` | 512 | 256-1024 | Model capacity |
+| `dim_feedforward` | 3200 | 1600-6400 | Transformer FFN width |
+| `num_layers` | 4 | 2-8 | Transformer depth |
+
+### Recommended Experiment Families
+
+Sweep one parameter at a time:
 
 ```
-experiments/
-├── exp_001_act_baseline/
-│   ├── config.yaml          # Hyperparameters
-│   ├── checkpoints/         # Model weights
+Family: Chunk Size Sweep
+  - exp-A: chunk_size=10 -> score X
+  - exp-B: chunk_size=25 -> score Y
+  - exp-C: chunk_size=50 -> score Z
+  - exp-D: chunk_size=100 -> score W
+  -> Pick best, move to next family
+
+Family: Data Quantity Sweep
+  - exp-A: 50 demos -> score X
+  - exp-B: 100 demos -> score Y
+  - exp-C: 200 demos -> score Z
+  -> Pick best, move to next family
+```
+
+### L4 GPU Memory Budget (24GB VRAM)
+
+| Configuration | Approx VRAM | Notes |
+|--------------|-------------|-------|
+| ACT, 3 cameras, batch 32, 224px | ~12GB | Comfortable |
+| ACT, 3 cameras, batch 64, 224px | ~20GB | Near limit |
+| ACT, 3 cameras, batch 32, 320px | ~18GB | Higher res |
+| ACT, 1 camera, batch 64, 224px | ~10GB | Fast iteration |
+
+## Step 3: Evaluate Trained Model
+
+### Run Evaluation
+
+```bash
+# Ensure the model weights are accessible to the policy
+# RunACT loads from a configured model path
+scripts/remote-eval.sh aic_example_policies.ros.RunACT
+```
+
+### Parse Results
+
+```bash
+cat aic_results/scoring.yaml
+# Look at per-trial breakdown: T1 (validity), T2 (performance), T3 (insertion)
+```
+
+### Compare Against Best
+
+| Metric | Current Best | This Run | Delta |
+|--------|-------------|----------|-------|
+| Total | 110.4 | ? | ? |
+| Trial 1 (SFP) | ? | ? | ? |
+| Trial 2 (SFP) | ? | ? | ? |
+| Trial 3 (SC) | ? | ? | ? |
+
+## Step 4: Tune and Iterate
+
+After evaluation, decide what to change:
+
+| Symptom | Likely Fix |
+|---------|-----------|
+| Low score, all trials | More demos, longer training |
+| Good SFP, bad SC | More SC demos, domain randomization |
+| Jerky motion | Larger chunk size, lower stiffness |
+| Slow insertion | Smaller chunk size, higher stiffness |
+| Overfitting (train good, eval bad) | More domain randomization |
+| Underfitting (train bad) | More epochs, higher LR, larger model |
+| OOM during training | Reduce batch size or image resolution |
+
+## Directory Structure
+
+```
+# On GPU instance
+~/training_data/                    # Raw demonstration data
+├── batch_001/                      # First collection batch
+│   ├── demo_001/                   # Individual demo (rosbag)
+│   ├── demo_002/
+│   └── ...
+├── batch_002/
+└── ...
+
+~/models/                           # Trained models
+├── exp_025_act_baseline/
+│   ├── config.yaml                 # Training hyperparameters
+│   ├── checkpoints/
 │   │   ├── epoch_010.pt
-│   │   └── best.pt
-│   ├── logs/                # Training logs
-│   └── eval/                # Evaluation results
-│       └── scoring.yaml     # From aic_engine
-├── exp_002_act_larger/
+│   │   ├── epoch_050.pt
+│   │   └── best.pt                # Best by validation loss
+│   ├── logs/                       # Tensorboard logs
+│   └── eval/
+│       └── scoring.yaml            # Eval results
+├── exp_026_act_more_demos/
 └── ...
 ```
 
-### Checkpoint Management
+## Checkpoint Management
 
 ```python
-# Save checkpoint
+# Save checkpoint (handled by train_act.py)
 torch.save({
     'epoch': epoch,
     'model_state_dict': model.state_dict(),
     'optimizer_state_dict': optimizer.state_dict(),
     'config': config,
     'eval_score': score,
-}, f'experiments/{exp_name}/checkpoints/epoch_{epoch:03d}.pt')
+}, f'~/models/{exp_name}/checkpoints/epoch_{epoch:03d}.pt')
 ```
 
-### Evaluation Loop
-
-For each checkpoint:
-1. Export model to policy format
-2. Run 3-trial eval via aic_engine
-3. Parse `scoring.yaml` for total score
-4. Compare against best checkpoint
-5. Save best model
+Always keep the best checkpoint by validation loss. Evaluate the top 2-3
+checkpoints per training run (not just the final one).
 
 ## Scoring Quick Reference
 
@@ -155,7 +235,7 @@ For each checkpoint:
 | Correct insertion | 75/trial | Contact sensor verification |
 | Partial insertion | 38-50/trial | Within port bounding box |
 | Proximity | 0-25/trial | Distance to port |
-| Smoothness | 0-6/trial | Jerk < 50 m/s³ |
+| Smoothness | 0-6/trial | Jerk < 50 m/s^3 |
 | Duration | 0-12/trial | < 5s = max, > 60s = 0 |
 | Efficiency | 0-6/trial | Short path length |
 | Force penalty | 0 to -12/trial | > 20N for > 1s |
@@ -163,56 +243,32 @@ For each checkpoint:
 
 **Target: 100 pts/trial x 3 trials = 300 max**
 
-## Cloud GPU Training (OVH L4-90)
+## Cloud GPU (OVH L4-90)
 
-The OVH L4-90 instance has an NVIDIA L4 GPU with 24GB VRAM and CUDA support,
-matching the official eval hardware. Training runs directly on this instance.
-
-### Recommended Batch Sizes for L4 (24GB VRAM)
-
-| Policy Type | Batch Size | Notes |
-|-------------|-----------|-------|
-| ACT (3 cameras) | 32-64 | 224x224 image input |
-| Diffusion Policy | 16-32 | Higher memory per sample |
-| RL (Isaac Lab) | GPU-parallel envs | Scales with VRAM |
-
-### Training on the GPU Instance
+The L4 with 24GB VRAM and CUDA runs both training and evaluation. Cost: ~$1.00/hr.
+Stop the instance when not in use.
 
 ```bash
-# SSH in and run training directly
-ssh gpu
-cd ~/ws_aic/src/aic
+# Check GPU status
+ssh gpu "nvidia-smi"
 
-# ACT training example
-pixi run python train_act.py --batch-size 32 --epochs 100
-
-# Or from dev host via SSH
-ssh gpu "cd ~/ws_aic/src/aic && pixi run python train_act.py --batch-size 32 --epochs 100"
+# Monitor training
+ssh gpu "tail -f ~/models/exp-NNN/logs/train.log"
 ```
-
-### Data Collection on GPU Instance
-
-Data collection (teleop or CheatCode demos) can run on the GPU instance with
-Gazebo headless. The GPU accelerates rendering for faster-than-realtime collection.
-
-```bash
-ssh gpu
-cd ~/ws_aic/src/aic
-# Launch headless sim + record demos
-pixi run ros2 bag record -a -o ~/training_data/demo_001 &
-pixi run ros2 run aic_model aic_model --ros-args \
-  -p use_sim_time:=true -p policy:=aic_example_policies.ros.CheatCode
-```
-
-### Cost Note
-
-The GPU instance costs ~$1.00/hr. Stop the instance when not training or
-experimenting. Budget: ~$1.00/hr x 5hr/day x 50 days = ~$250 total.
 
 ## Rules
 
 - **Iterate fast:** Short training runs with quick evals beat long monolithic runs
 - **Track everything:** Every experiment gets a config, checkpoints, and eval scores
-- **Domain randomize:** Vary board pose, port positions, grasp noise
-- **Watch for overfitting:** If scores are high on fixed configs but low on random, diversify training
+- **Domain randomize:** Vary board pose, port positions, grasp noise during data collection
+- **Watch for overfitting:** If scores are high on fixed configs but low on random, diversify training data
+- **One variable at a time:** Change chunk size OR learning rate, not both
 - **Submission limit:** 1 per day to cloud eval. Local eval is unlimited.
+
+## Related Skills
+
+- `/experiment` -- Experiment loop (propose, run, log, analyze)
+- `/sim` -- Launch simulation for data collection
+- `/eval-policy` -- Score parsing and comparison
+- `/impl` -- Policy code reference (RunACT)
+- `/commit` -- Commit conventions

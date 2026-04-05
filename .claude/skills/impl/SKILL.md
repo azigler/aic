@@ -16,18 +16,19 @@ A Python policy class that controls a UR5e robot to insert fiber optic connector
 
 ## Policy Architecture Options
 
-### Option A: End-to-End Learned (ACT / Diffusion)
+### Option A: End-to-End ACT (RECOMMENDED -- Primary Approach)
 
 ```
-cameras + proprioception -> neural network -> action chunks -> controller
+cameras + proprioception -> ACT neural network -> action chunks -> controller
 ```
 
-- Train on demonstrations (teleoperation or CheatCode expert)
-- ACT baseline provided in `aic_example_policies/`
-- Pros: can learn complex behaviors, handles uncertainty
-- Cons: needs lots of data, can fail on OOD configs
+- Train on CheatCode demonstrations with domain randomization
+- ACT baseline provided in `aic_example_policies/` (RunACT)
+- Iteration is via training config changes, not policy code changes
+- See `/train` for the full ACT pipeline
+- **This is the active development path (Branch C)**
 
-### Option B: Perception + Classical Control
+### Option B: Perception + Classical Control (Fallback)
 
 ```
 cameras -> vision model -> port pose estimate
@@ -36,44 +37,46 @@ port pose + TCP pose -> motion planner -> controller
 
 - ML for perception only (detect port position/orientation)
 - Classical controller for approach + insertion (spiral search, impedance)
-- Pros: interpretable, robust, less data needed
-- Cons: may not handle complex cable physics
+- **Explored in Branch B, plateaued at ~100. Not recommended for further investment.**
 
-### Option C: Hybrid
+### Option C: Pure Classical (Exhausted)
 
 ```
-cameras -> vision model -> coarse alignment
-proprioception + wrench -> learned insertion policy -> controller
+ground truth offsets -> hardcoded trajectory -> controller
 ```
 
-- Vision for coarse positioning
-- Learned fine-grained insertion using force feedback
-- Best of both worlds
+- No perception, hardcoded offsets from task board TF
+- **Explored in Branch A, plateaued at 93.4. Fully exhausted.**
 
 ## Implementation Phases
 
-### Phase 1: Get the Loop Running
+### Phase 1: Get the Loop Running (DONE)
 
 1. Create a policy class extending `aic_model.Policy`
 2. Implement `insert_cable()` with basic motion commands
 3. Verify Tier 1 passes (model validity)
 4. Score > 0 on at least one trial (proximity points)
 
-### Phase 2: Perception
+### Phase 2: Classical Control Tuning (DONE -- Branch A, plateau 93.4)
 
-1. Process camera images to locate target port
-2. Estimate port pose relative to TCP
-3. Use force/torque for contact detection
-4. Score > 25 (proximity/partial insertion)
+1. Hardcoded approach trajectories with ground-truth offsets
+2. Force feedback and spiral search
+3. Impedance parameter tuning
 
-### Phase 3: Insertion
+### Phase 3: Camera Perception (DONE -- Branch B, plateau ~100)
 
-1. Implement approach trajectory (move toward port)
-2. Implement insertion strategy (comply + push)
-3. Tune impedance parameters (lower stiffness for compliance)
-4. Score > 50 (partial to full insertion)
+1. IBVS visual servoing, template matching, color segmentation
+2. Explored 16 experiments, best 110.4 (lucky), reliable ~100
 
-### Phase 4: Optimization
+### Phase 4: ACT Training (ACTIVE -- Branch C)
+
+1. Collect demonstrations via CheatCode with domain randomization
+2. Train ACT model on GPU instance (see `/train`)
+3. Evaluate trained model, compare against best score
+4. Iterate on training config (chunk size, LR, batch size, demos)
+5. Target: 100+ reliable, 200+ competitive
+
+### Phase 5: Optimization (FUTURE)
 
 1. Optimize trajectory for speed (duration score 0-12)
 2. Smooth motion (reduce jerk, smoothness score 0-6)
