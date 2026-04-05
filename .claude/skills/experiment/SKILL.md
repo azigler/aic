@@ -174,16 +174,63 @@ When running autonomously (no human in the loop), the agent should:
 - Always log results even if experiment failed
 - Keep experiment beads as permanent record
 
+## ACT Experiment Flow
+
+ACT experiments follow a longer cycle than classical experiments (~2-3 hours per
+cycle instead of ~10 minutes). The iteration variable is the training config, not
+the policy source code.
+
+### Cycle: Collect -> Train -> Eval
+
+1. **Collect demonstrations** on GPU instance:
+   ```bash
+   ssh gpu "cd ~/ws_aic/src/aic && scripts/collect_demos.sh --num-demos 100"
+   ```
+   Data stored in `~/training_data/` on GPU.
+
+2. **Train ACT model** on GPU instance:
+   ```bash
+   ssh gpu "cd ~/ws_aic/src/aic && scripts/train_act.py \
+     --data-dir ~/training_data \
+     --output-dir ~/models/exp-NNN \
+     --chunk-size 50 --lr 1e-4 --batch-size 32 --epochs 100"
+   ```
+   ~1-2 hours on L4 GPU. Models saved to `~/models/`.
+
+3. **Evaluate** the trained model:
+   ```bash
+   scripts/remote-eval.sh aic_example_policies.ros.RunACT
+   ```
+
+4. **Iterate** by adjusting training config:
+   - Chunk size (10-100)
+   - Learning rate (1e-5 to 1e-3)
+   - Batch size (32-64, limited by L4 VRAM)
+   - Number of demonstrations (50-500)
+   - Domain randomization parameters
+   - Image resolution (224x224 typical)
+
+### What to Vary in ACT Experiments
+
+ACT hillclimbing changes training configs, not policy code. Common experiment
+families:
+
+- **Data quantity sweep:** 50 / 100 / 200 / 500 demos
+- **Chunk size sweep:** 10 / 25 / 50 / 100
+- **Learning rate sweep:** 1e-5 / 5e-5 / 1e-4 / 5e-4
+- **Domain randomization level:** none / mild / aggressive
+- **Camera input:** 1 camera / 2 cameras / all 3
+
 ## Branches Quick Reference
 
-| Branch | Approach | Difficulty | Potential |
-|--------|----------|------------|-----------|
-| A: Classical | Hardcoded + vision + force control | Low-Medium | 50-80/trial |
-| B: Imitation | ACT/diffusion on demonstrations | Medium-High | 60-95/trial |
-| C: Hybrid | Vision approach + learned insertion | Medium | 70-95/trial |
-| D: RL | Reward-shaped reinforcement learning | High | 50-100/trial |
+| Branch | Approach | Difficulty | Potential | Status |
+|--------|----------|------------|-----------|--------|
+| A: Classical | Hardcoded + force control | Low-Medium | 50-80/trial | Plateau at 93.4 |
+| B: Camera | IBVS + template matching | Medium | 80-100/trial | Plateau at ~100 |
+| C: ACT | Imitation learning on demos | Medium-High | 60-95/trial | **Active** |
+| D: RL | Reward-shaped RL | High | 50-100/trial | Not started |
 
-**Start with A** (fastest to get a score > 0), then branch based on results.
+**Current path:** Branch C (ACT). Branches A and B are exhausted.
 
 ## Related Skills
 

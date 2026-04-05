@@ -4,6 +4,8 @@ Adapted from https://github.com/karpathy/autoresearch
 
 ## Core Loop (HARD RULES)
 
+### Classical / Camera Experiments (~10 min per cycle)
+
 ```
 LOOP FOREVER:
 1. Read git state + experiments.tsv (what's best, what's been tried)
@@ -17,6 +19,25 @@ LOOP FOREVER:
 9. NEVER pause, ask human, or wait for permission
 10. If stuck (5+ discards in a row): try radical change or pivot branch
 ```
+
+### ACT Training Experiments (~2-3 hours per cycle)
+
+```
+LOOP FOREVER:
+1. Read prior ACT experiment results (training configs + eval scores)
+2. Formulate hypothesis about training config change
+3. Adjust training config (ONE variable: chunk size, LR, demos, etc.)
+4. Collect demos if needed (scripts/collect_demos.sh, ~30 min)
+5. Train model (scripts/train_act.py, ~1-2 hours)
+6. Evaluate trained model (scripts/remote-eval.sh, ~10 min)
+7. Parse score from aic_results/scoring.yaml
+8. If score > best: KEEP (save model, update experiments.tsv)
+9. If score < best: DISCARD (revert config change, try different variable)
+10. If stuck (3+ discards in a row): try different experiment family
+```
+
+Note: ACT iteration changes training configs, not policy code. The RunACT policy
+stays fixed. The "code" being modified is the training hyperparameters.
 
 ## Decision Rules
 
@@ -45,9 +66,10 @@ Family: Force Threshold Sweep
 
 ## Convergence Detection
 
-- Branch A (Classical): If no improvement in 5 experiments → pivot to B
-- Branch B (Camera): If no improvement in 10 experiments → try hybrid
-- Global: If May 10 and best < 150 → radical reset
+- Branch A (Classical): Plateaued at 93.4 after 8 experiments -- DONE
+- Branch B (Camera): Plateaued at ~100 after 16 experiments -- DONE
+- Branch C (ACT): Active. Each cycle is ~2-3 hours (collect + train + eval)
+- Global: If May 10 and best < 150 → radical reset (try RL in Isaac Lab)
 - If best > 200 → submit daily and optimize
 
 ## experiments.tsv Format
@@ -62,8 +84,8 @@ Status values: best, keep, keep_experimental, discard, crash, timeout
 
 | Aspect | Autoresearch | Our Setup |
 |--------|-------------|-----------|
-| Time per experiment | 5 min fixed | ~7 min (3 trials) |
+| Time per experiment | 5 min fixed | ~7 min (classical) / ~2-3 hrs (ACT) |
 | Metric | val_bpb (lower=better) | score 0-300 (higher=better) |
-| Code to modify | train.py only | perception.py + VisionPolicy.py |
+| Code to modify | train.py only | Training config (ACT) or policy code (classical) |
 | Cost | Free (local GPU) | $1/hr cloud GPU |
 | Deadline | None | May 15, 2026 |

@@ -44,6 +44,14 @@ if [ -f scripts/runner-config.sh ]; then
 else
     echo "Cloud GPU runner: not configured"
 fi
+
+# Check training data and models on GPU (ACT pipeline)
+if ssh -o ConnectTimeout=3 gpu true 2>/dev/null; then
+    echo "--- Training Data ---"
+    ssh gpu "ls ~/training_data/ 2>/dev/null | wc -l" && echo "demo directories found"
+    echo "--- Trained Models ---"
+    ssh gpu "ls ~/models/ 2>/dev/null | head -10"
+fi
 ```
 
 Determine:
@@ -52,6 +60,8 @@ Determine:
 - **Dirty files**: uncommitted changes need attention first
 - **Docker status**: eval container available? model built?
 - **Runner status**: cloud GPU instance configured and reachable?
+- **Training data**: how many demos collected in `~/training_data/` on GPU?
+- **Trained models**: any models in `~/models/` on GPU? Which is latest/best?
 - **Current best score**: from experiment-log.md
 
 ## Step 3: Find Current Position
@@ -67,11 +77,14 @@ cat .claude/refs/experiment-log.md                   # score leaderboard
 Assess which phase we're in:
 1. **Bootstrap** -- harness setup, Docker install, first build
 2. **Baseline** -- getting Tier 1 passing, first non-zero score
-3. **Perception** -- working on port detection from cameras
-4. **Insertion** -- working on approach/insertion strategy
-5. **Training** -- training a learned policy (ACT/diffusion/RL)
-6. **Optimization** -- tuning for max score (speed, smoothness)
-7. **Submission** -- packaging, local verification, cloud submit
+3. **Perception** -- working on port detection from cameras (Branch B, done)
+4. **Insertion** -- working on approach/insertion strategy (Branch A, done)
+5. **Data Collection** -- collecting CheatCode demonstrations for ACT training
+6. **Training** -- training ACT model on collected demos (~2-3 hours per cycle)
+7. **Training Eval** -- evaluating trained ACT model, comparing to best
+8. **Training Tuning** -- adjusting hyperparameters and retraining
+9. **Optimization** -- tuning for max score (speed, smoothness)
+10. **Submission** -- packaging, local verification, cloud submit
 
 ## Step 4: Classify Work
 
@@ -105,6 +118,8 @@ Assess which phase we're in:
 **Active beads**: [list or none]
 **Docker status**: [eval image pulled? model built? running?]
 **Runner status**: [not configured / reachable / unreachable]
+**Training data**: [N demos in ~/training_data/ or "none"]
+**Latest model**: [model path in ~/models/ or "none"]
 **Blockers**: [none / list]
 
 **Recommended action**: [what to do next]

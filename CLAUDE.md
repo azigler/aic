@@ -6,11 +6,11 @@ Competition entry for the [AI for Industry Challenge](https://www.intrinsic.ai/e
 
 ## Current Score
 
-**Best: 93.4** (exp-004 DirectApproach v2, Branch A1 Classical Control, 2026-04-04)
+**Best: 110.4** (IBVS lucky run, Branch B Camera Perception). Reliable range: ~90-100.
 
-Classical control has plateaued. Pivoting to Branch B (Camera Perception) to break
-through the XY alignment bottleneck. See `.claude/refs/experiment-log.md` for full
-leaderboard.
+After 24 experiments across 3 branches, ACT imitation learning (Branch C) is the
+**primary approach**. Branch A (Classical) plateaued at 93.4. Branch B (Camera
+Perception) plateaued at ~100. See `.claude/refs/experiment-log.md` for full leaderboard.
 
 ## Challenge Summary
 
@@ -146,13 +146,32 @@ results table, analysis, and next steps. See `/experiment` skill.
 
 **Exploration tree:**
 - Branch A: Classical (hardcoded -> vision -> force control) -- **plateaued at 93.4**
-- Branch B: Camera Perception (detect ports from images) -- **active, next up**
-- Branch C: Hybrid (vision + learned insertion)
-- Branch D: RL (Isaac Lab)
+- Branch B: Camera Perception (IBVS, template matching) -- **plateaued at ~100**
+- Branch C: ACT Imitation Learning (data collection -> training -> eval) -- **active, primary**
+- Branch D: RL (Isaac Lab) -- not started
 
-**Current focus:** Branch B. Classical control cannot break past 93.4 because
-hardcoded XY offsets do not generalize across randomized board configurations.
-Camera-based port detection is required to close the ~5cm XY alignment gap.
+**Current focus:** Branch C (ACT). Both classical control and camera perception
+plateaued. ACT training is the path to break through 100+ reliably. The loop is:
+collect demonstrations -> train ACT model -> evaluate -> adjust training config.
+
+## ACT Pipeline
+
+The primary development workflow is now the ACT training loop:
+
+1. **Collect demonstrations** -- run CheatCode with domain randomization to gather
+   expert trajectories. Data stored in `~/training_data/` on the GPU instance.
+   Script: `scripts/collect_demos.sh`
+
+2. **Train ACT model** -- train Action Chunking with Transformers on collected demos.
+   Each training cycle takes ~2-3 hours on the L4 GPU. Trained models stored in
+   `~/models/` on the GPU instance. Script: `scripts/train_act.py`
+
+3. **Evaluate** -- run the trained ACT policy through 3-trial eval. Compare against
+   best score. Script: `scripts/remote-eval.sh aic_example_policies.ros.RunACT`
+
+4. **Iterate** -- adjust training hyperparameters (chunk size, learning rate, batch
+   size, number of demos, domain randomization) and retrain. ACT hillclimbing is
+   done via training config changes, not policy code changes.
 
 **Local scoring:** `docker compose -f docker/docker-compose.yaml up` runs headless
 eval. Results in `aic_results/scoring.yaml`. Unlimited local runs; 1/day cloud submit.

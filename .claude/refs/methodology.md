@@ -114,36 +114,64 @@ Based on analysis, choose next experiment:
 
 ## Approach Exploration Strategy
 
-We don't commit to one approach. We explore multiple paths and double down on
-what works. The exploration follows a tree:
+We explored multiple branches and converged on the most promising path. After 24
+experiments the exploration tree looks like this:
 
 ```
 Root: Get Tier 1 passing (valid policy)
-├── Branch A: Classical Control
-│   ├── A1: Hardcoded approach (fixed offset from task.target_module_name)
-│   ├── A2: Vision-based port detection + PID control
-│   ├── A3: Force-feedback spiral search for insertion
-│   └── A4: Combine A2 + A3
-├── Branch B: Imitation Learning
-│   ├── B1: Collect demos via CheatCode
-│   ├── B2: Train ACT on demos
-│   ├── B3: Fine-tune with domain randomization
-│   └── B4: Distill to smaller/faster model
-├── Branch C: Hybrid
-│   ├── C1: Vision for coarse alignment + classical for insertion
-│   ├── C2: Classical for approach + learned for insertion
-│   └── C3: Full pipeline with learned components
-└── Branch D: Reinforcement Learning
-    ├── D1: Isaac Lab parallel training
-    ├── D2: Reward shaping for insertion
-    └── D3: Sim-to-sim transfer
+├── Branch A: Classical Control -- PLATEAUED at 93.4 (8 experiments)
+│   ├── A1: Hardcoded approach -- best 93.4
+│   └── A2: XY correction -- best 79.9
+├── Branch B: Camera Perception -- PLATEAUED at ~100 (16 experiments)
+│   ├── B1: IBVS (image-based visual servoing) -- best 110.4 (lucky), reliable ~90-100
+│   ├── B2: Template matching -- inconsistent
+│   └── B3: Color segmentation -- unreliable
+├── Branch C: ACT Imitation Learning -- ACTIVE (primary approach)
+│   ├── C1: Collect demos via CheatCode with domain randomization
+│   ├── C2: Train ACT on demos (2-3 hours per cycle)
+│   ├── C3: Hyperparameter tuning (chunk size, LR, batch size)
+│   └── C4: Scale up demos + fine-tune
+└── Branch D: Reinforcement Learning -- Not started
+    └── D1: Isaac Lab parallel training (fallback if ACT fails)
 ```
+
+**Current status:** Branch C (ACT) is the active primary approach. Branches A and B
+have been explored and plateaued. ACT hillclimbing is done via training config changes
+(hyperparameters, data quantity, domain randomization), not policy code changes.
 
 **Decision points:**
 - After each experiment, assess: is this branch worth continuing?
 - If 3 experiments on a branch show no progress, pivot
 - If a branch scores >50/trial, invest more time optimizing it
 - If a branch scores >75/trial, it's our submission candidate
+
+## ACT Training Cycle
+
+Each ACT experiment follows a longer cycle than classical experiments (~2-3 hours
+per cycle instead of ~10 minutes):
+
+```
+COLLECT DATA -> TRAIN MODEL -> EVALUATE -> ADJUST CONFIG -> REPEAT
+```
+
+1. **Collect data:** Run `scripts/collect_demos.sh` on GPU instance. CheatCode
+   generates expert demonstrations with domain randomization. ~50-200 demos needed.
+   Data stored in `~/training_data/` on the GPU.
+
+2. **Train model:** Run `scripts/train_act.py` on GPU instance. ~1-2 hours for
+   100 epochs on L4 GPU. Models stored in `~/models/`.
+
+3. **Evaluate:** Run 3-trial eval with the trained ACT policy. Parse scoring.yaml.
+
+4. **Adjust config:** Change hyperparameters based on results:
+   - Chunk size (10-100): larger = smoother but less reactive
+   - Learning rate (~1e-4): cosine schedule
+   - Batch size (32-64): limited by L4 VRAM (24GB)
+   - Number of demos: more = better generalization
+   - Domain randomization: board pose, port offset, grasp noise
+
+Key difference from classical experiments: the iteration variable is the training
+config, not the policy source code. The policy code (RunACT) stays fixed.
 
 ## Score Targets
 

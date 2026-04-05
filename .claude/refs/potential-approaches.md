@@ -1,12 +1,13 @@
 # Potential Approaches: How to Win This Competition
 
-## Current Status (April 5, 2026)
+## Current Status (Updated March 27, 2026)
 
-**Best score: 93.4/300** (exp-004). We've achieved partial insertion on one SFP trial.
-We've been iterating for ~4 hours on the GPU ($4 spent so far).
+**Best score: 110.4/300** (IBVS lucky run). Reliable range: ~90-100.
+After 24 experiments across Branches A (Classical) and B (Camera Perception), both
+have plateaued. **ACT imitation learning (Branch C) is now the primary approach.**
 
-**Time remaining:** ~40 days until May 15 qualification deadline.
-**Budget:** at $1/hr, ~$250 if using 6hr/day. We've used ~$4 so far.
+**Time remaining:** ~49 days until May 15 qualification deadline.
+**Budget:** at $1/hr, ~$250 if using 6hr/day.
 
 ## What We've Learned (7 experiments)
 
@@ -88,47 +89,47 @@ sim-to-sim transfer uncertain. High variance.
 **Expected:** Wide range -- could be amazing or terrible.
 **Cost:** ~$50-100 (days of GPU time for training)
 
-## Recommended Strategy
+## Recommended Strategy (Updated)
 
-### Phase 1: Quick Wins (Today, ~$2-4)
-1. **Fix descent depth to 20cm** (currently 15cm, port is at 18.6cm below)
-2. **Add average XY offset** from ground truth data
-3. **Target: 120+ total** (beat WaveArm's 42 and our 93.4 on all trials)
+### Phase 1: Quick Wins -- DONE
+- Fixed descent depth, added XY offsets
+- Best: 93.4 (Branch A, 8 experiments)
 
-### Phase 2: Camera Perception (Next 3-5 days, ~$10-15)
-1. Capture camera images at various positions
-2. Implement port detection (start with simple template matching)
-3. Servo toward detected port before insertion
-4. **Target: 180+ total** (consistent partial/full insertion on SFP)
+### Phase 2: Camera Perception -- DONE
+- IBVS, template matching, color segmentation
+- Best: 110.4 lucky / ~100 reliable (Branch B, 16 experiments)
+- Plateau reached, diminishing returns after exp-016
 
-### Phase 3: SC Trial Fix (Same period)
-1. SC port geometry is different -- 31cm away, large XY offset
-2. Camera perception should handle this if trained on SC shapes
-3. **Target: 200+ total** (scoring on all 3 trials)
+### Phase 3: ACT Training -- ACTIVE (Primary Path)
+1. Collect CheatCode demonstrations with domain randomization
+2. Train ACT model on L4 GPU (~2-3 hours per cycle)
+3. Evaluate and iterate on training config
+4. **Target: 150+ total** (reliable insertion on SFP trials)
+5. **Stretch: 200+ total** (competitive for top 30)
 
-### Phase 4: Full Insertion + Optimization (Days 5-15, ~$20-30)
-1. Tune insertion parameters for full 75-point insertion
-2. Optimize trajectory for speed (duration bonus)
-3. Smooth motion (jerk minimization)
-4. **Target: 250+ total** (competitive for top 30)
+### Phase 4: ACT Optimization (After baseline ACT works)
+1. Scale up training data (200+ demos)
+2. Tune chunk size, learning rate, model architecture
+3. Domain randomization for SC trial generalization
+4. **Target: 250+ total**
 
-### Phase 5: Learned Policy (Days 15-40 if needed, ~$50)
-1. If classical approach plateaus, train ACT on successful demos
-2. Use our classical controller as the demonstration expert
+### Phase 5: Fallback -- RL (Only if ACT plateaus)
+1. Isaac Lab parallel training
+2. Reward shaping for cable insertion
 3. **Target: 270+ total** (prize contention)
 
 ## Cost Summary
 
-| Phase | Duration | GPU Hours | Cost |
-|-------|----------|-----------|------|
-| 1. Quick wins | 1 day | 2-4h | $2-4 |
-| 2. Camera perception | 3-5 days | 15-25h | $15-25 |
-| 3. SC fix | Included in 2 | -- | -- |
-| 4. Full insertion | 5-10 days | 20-40h | $20-40 |
-| 5. Learned policy | 10-20 days | 30-60h | $30-60 |
-| **Total** | **~20-40 days** | **67-129h** | **$67-129** |
+| Phase | Duration | GPU Hours | Cost | Status |
+|-------|----------|-----------|------|--------|
+| 1. Quick wins | 1 day | 4h | ~$4 | DONE |
+| 2. Camera perception | 10 days | ~30h | ~$30 | DONE |
+| 3. ACT training | 5-15 days | 30-80h | $30-80 | ACTIVE |
+| 4. ACT optimization | 5-10 days | 20-40h | $20-40 | Planned |
+| 5. RL fallback | 10-20 days | 30-60h | $30-60 | Contingency |
+| **Total** | **~30-45 days** | **~110-210h** | **~$110-210** |
 
-Well under the $250 budget.
+Within the $250 budget.
 
 ## How Smart Teams Iterate
 
