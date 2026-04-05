@@ -35,3 +35,4 @@ ba94165	101.9	480	best	C	exp-024: OurACT micro-trained (3 demos, 5 epochs) -- PA
 3934922	101.9	480	keep	C	exp-025: ACT v2 (6 demos, 50 epochs) -- same as micro, needs diverse data
 b4a5497	101.9	-	keep	C	exp-025: ACT v2 (6 demos, 50 epochs, chunk=50)
 -	-	-	running	C	exp-026: ACT v3 (12 demos, 200 epochs, chunk=100) -- training...
+bb6674c	102.0	480	keep	C	exp-026: ACT v3 (12 demos, 89 epochs, chunk=100) -- same score, need diverse data
