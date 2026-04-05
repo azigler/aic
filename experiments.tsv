@@ -24,3 +24,5 @@ af15a58	98.4	420	keep	B	exp-012b: calibrated transform + limited servo (40% desc
 69d2d49	110.4	420	best	B	exp-017c: IBVS both signs fixed -- NEW HIGH! SC improved to 8cm
 ada2cc4	49.5	480	discard	B	exp-018a: damped IBVS still oscillates
 ada2cc4	100.1	420	best	B	exp-018b: averaged IBVS -- broke 100! Partial insertion T1
+060b335	49.5	480	discard	B	exp-018a: damped IBVS gain halved, still oscillates
+060b335	86.3	420	discard	B	exp-019: two-pass IBVS, mid-descent correction didn't help

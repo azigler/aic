@@ -172,6 +172,7 @@ class IBVSPolicy(Policy):
         descent_stiff = [80.0, 80.0, 60.0, 40.0, 40.0, 40.0]
         descent_damp = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]
 
+        mid_correction_done = False
         for i in range(int(max_descent / step)):
             obs = get_observation()
             if obs is None:
@@ -181,6 +182,38 @@ class IBVSPolicy(Policy):
             if rel_f > force_limit:
                 self.sleep_for(0.03)
                 continue
+
+            # Mid-descent IBVS correction (at ~40% depth, closer to port)
+            if not mid_correction_done and total > max_descent * 0.4:
+                mid_correction_done = True
+                mid_corrections_dx = []
+                mid_corrections_dy = []
+                for _ in range(5):
+                    obs2 = get_observation()
+                    if obs2 is None:
+                        continue
+                    det = detect_port(
+                        obs2.center_image,
+                        task.plug_type,
+                        obs2.center_camera_info,
+                        frame_counter,
+                        save_debug=False,
+                        port_name=task.port_name,
+                    )
+                    if det is not None:
+                        px2 = det[0] * fx + cx_k
+                        py2 = det[1] * fy + cy_k
+                        mid_corrections_dx.append((py2 - img_cy) * pixel_gain)
+                        mid_corrections_dy.append(-(px2 - img_cx) * pixel_gain)
+                    self.sleep_for(0.05)
+                if mid_corrections_dx:
+                    mdx = sum(mid_corrections_dx) / len(mid_corrections_dx)
+                    mdy = sum(mid_corrections_dy) / len(mid_corrections_dy)
+                    target_x += mdx
+                    target_y += mdy
+                    self.get_logger().info(
+                        f"Mid-descent correction: ({mdx:.4f},{mdy:.4f})"
+                    )
 
             target_z -= step
             total += step
