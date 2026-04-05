@@ -90,9 +90,9 @@ class VisionPolicy(Policy):
 
         Empirically calibrated mapping:
         """
-        # Camera optical frame -> base frame (calibrated from ground truth)
-        dx_base = cam_offset[1]  # camera Y -> base +X
-        dy_base = cam_offset[0]  # camera X -> base +Y
+        # Camera optical frame -> base frame (original mapping that scored 98.5)
+        dx_base = -cam_offset[1]  # camera Y -> base -X
+        dy_base = -cam_offset[0]  # camera X -> base -Y
         return dx_base, dy_base
 
     # ------------------------------------------------------------------
@@ -209,8 +209,6 @@ class VisionPolicy(Policy):
         damping = [50.0, 50.0, 40.0, 25.0, 25.0, 25.0]
         step = 0.0005
         total_descent = 0.0
-        servo_interval = 40  # Re-detect every 40 steps (~2s)
-
         for i in range(int(max_descent / step)):
             obs = get_observation()
             if obs is None:
@@ -221,13 +219,8 @@ class VisionPolicy(Policy):
                 self.sleep_for(0.05)
                 continue
 
-            # Visual servo during descent -- only in first 40% of descent
-            # (at close range the perspective distorts too much)
-            if (
-                i > 0
-                and i % servo_interval == 0
-                and total_descent < max_descent * 0.4
-            ):
+            # Periodic visual servo refinement during descent
+            if i > 0 and i % 40 == 0 and total_descent < max_descent * 0.7:
                 cam_offset = self._detect_port_from_obs(
                     obs, task.plug_type, task.port_name
                 )
@@ -235,7 +228,7 @@ class VisionPolicy(Policy):
                     dx_base, dy_base = self._camera_offset_to_base_xy(
                         cam_offset, obs.controller_state.tcp_pose
                     )
-                    correction_gain = 0.2  # Reduced from 0.3 -- less aggressive
+                    correction_gain = 0.3
                     target_x += dx_base * correction_gain
                     target_y += dy_base * correction_gain
                     self.get_logger().info(

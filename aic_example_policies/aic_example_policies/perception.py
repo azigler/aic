@@ -247,10 +247,10 @@ def detect_port(
     # Run type-specific detection
     if port_type == "sc":
         detection = _detect_sc_port(bgr)
-        estimated_depth = 0.28  # SC port is ~28cm from camera during approach
+        estimated_depth = 0.28  # SC port distance from camera
     else:
         detection = _detect_sfp_port(bgr, port_name=port_name)
-        estimated_depth = 0.18  # SFP port is ~18cm from camera during approach
+        estimated_depth = 0.18  # SFP port distance from camera
 
     # Save debug image (suppress errors so debug I/O never crashes the policy)
     if save_debug:

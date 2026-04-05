@@ -12,3 +12,7 @@ a1b2c3d	93.4	-	best	A1	exp-004 DirectApproach v2: PARTIAL INSERTION on trial 1
 -	76.0	-	discard	B	exp-011b Per-port detection: wrong port selected
 af15a58	60.4	420	discard	B	exp-012a: swapped transform, servo diverged at depth
 af15a58	98.4	420	keep	B	exp-012b: calibrated transform + limited servo (40% descent only)
+1cd70c6	60.3	420	discard	B	exp-013a: depth=0.30m, overcompensated
+1cd70c6	60.1	420	discard	B	exp-013b: depth=0.22m, still overcompensated
+1cd70c6	78.8	420	discard	B	exp-013c: no servo at all, lost alignment
+1cd70c6	84.5	420	keep	B	exp-013d: reverted to original config (verify baseline)
