@@ -15,8 +15,7 @@ COPY pixi_env_setup.sh /ws_aic/src/aic/
 # Add other dependencies
 
 SHELL ["/bin/bash", "-c"]
-RUN --mount=type=cache,target=/root/.cache/rattler/cache \
-    cd /ws_aic/src/aic && pixi install --locked
+RUN cd /ws_aic/src/aic && pixi install --locked
 
 WORKDIR /ws_aic/src/aic
 COPY --chmod=755 <<"EOF" /entrypoint.sh

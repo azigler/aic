@@ -386,10 +386,25 @@ class DataCollector(Policy):
 
             return obs
 
-        # Delegate to CheatCode expert, passing our recording wrapper
+        def recording_move_robot(**kwargs):
+            """Wrapper that records the current observation when a command is sent."""
+            nonlocal last_record_time
+            # Record observation at each move command (CheatCode doesn't call get_observation)
+            obs = get_observation()
+            if obs is not None:
+                current_time = time.time()
+                if current_time - last_record_time >= (1.0 / self.RECORD_HZ):
+                    self._record_observation(obs, current_time)
+                    last_record_time = current_time
+            move_robot(**kwargs)
+
+        # Delegate to CheatCode expert, passing our recording wrappers
         try:
             result = self._expert.insert_cable(
-                task, recording_get_observation, move_robot, send_feedback
+                task,
+                recording_get_observation,
+                recording_move_robot,
+                send_feedback,
             )
         except Exception as ex:
             self.get_logger().error(f"CheatCode failed: {ex}")
