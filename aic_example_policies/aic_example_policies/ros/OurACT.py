@@ -8,9 +8,6 @@
 
 import json
 import os
-
-# Import SimpleACT from training script
-import sys
 import time
 
 import cv2
@@ -25,10 +22,7 @@ from aic_model.policy import (
 from aic_task_interfaces.msg import Task
 from geometry_msgs.msg import Point, Pose, Quaternion
 
-sys.path.insert(
-    0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts")
-)
-from train_act import SimpleACT
+from ..simple_act import SimpleACT
 
 
 class OurACT(Policy):
@@ -47,14 +41,18 @@ class OurACT(Policy):
         )
         self.get_logger().info(f"Loading ACT model from {model_dir}")
 
-        # Read image size from model config if available, else use default
+        # Read image size and offset mode from model config
         config_path = os.path.join(model_dir, "config.json")
         if os.path.exists(config_path):
             with open(config_path) as f:
                 config = json.load(f)
             self.img_size = config.get("img_size", self.IMG_SIZE)
+            self.offset_mode = config.get("offset_mode", False)
         else:
             self.img_size = self.IMG_SIZE
+            self.offset_mode = False
+
+        self.get_logger().info(f"Offset mode: {self.offset_mode}")
 
         # Load normalization stats
         stats_path = os.path.join(model_dir, "normalization_stats.json")
@@ -89,9 +87,13 @@ class OurACT(Policy):
                 ).view(1, 3, 1, 1),
             }
 
-        # Load model
+        # Load model (pretrained=False: we load full checkpoint, don't need ImageNet init)
         self.model = SimpleACT(
-            state_dim=26, action_dim=7, chunk_size=50, img_size=self.img_size
+            state_dim=26,
+            action_dim=7,
+            chunk_size=50,
+            img_size=self.img_size,
+            pretrained=False,
         )
         checkpoint = torch.load(
             os.path.join(model_dir, "best_model.pt"), map_location=self.device
@@ -177,12 +179,25 @@ class OurACT(Policy):
             with torch.inference_mode():
                 action_norm = self.model(img_left, img_center, img_right, state)
 
-            # Un-normalize action: 7D position target [x,y,z,qx,qy,qz,qw]
+            # Un-normalize action
             action = (
                 (action_norm[0] * self.action_std + self.action_mean)
                 .cpu()
                 .numpy()
             )
+
+            # In offset mode, action[:3] is a delta — add to current TCP position
+            if self.offset_mode:
+                tcp = obs.controller_state.tcp_pose
+                target_xyz = np.array(
+                    [
+                        tcp.position.x + action[0],
+                        tcp.position.y + action[1],
+                        tcp.position.z + action[2],
+                    ]
+                )
+            else:
+                target_xyz = action[:3]
 
             # Normalize quaternion to ensure unit length
             quat = action[3:7]
@@ -193,12 +208,11 @@ class OurACT(Policy):
                 quat = np.array([0.0, 0.0, 0.0, 1.0])
 
             # Send position target via set_pose_target (uses MODE_POSITION)
-
             target_pose = Pose(
                 position=Point(
-                    x=float(action[0]),
-                    y=float(action[1]),
-                    z=float(action[2]),
+                    x=float(target_xyz[0]),
+                    y=float(target_xyz[1]),
+                    z=float(target_xyz[2]),
                 ),
                 orientation=Quaternion(
                     x=float(quat[0]),

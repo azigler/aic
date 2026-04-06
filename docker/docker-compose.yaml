@@ -6,6 +6,7 @@ services:
       dockerfile: docker/aic_eval/Dockerfile
       context: ..
     command: gazebo_gui:=false launch_rviz:=false ground_truth:=false start_aic_engine:=true shutdown_on_aic_engine_exit:=true
+    gpus: all
     networks:
       - default
     environment:
@@ -20,6 +21,7 @@ services:
       dockerfile: docker/aic_model/Dockerfile
       context: ..
     command: --ros-args -p policy:=aic_example_policies.ros.OurACT
+    gpus: all
     networks:
       - default
     environment:
@@ -27,9 +29,9 @@ services:
       ZENOH_ROUTER_CHECK_ATTEMPTS: -1
       AIC_ROUTER_ADDR: eval:7447
       AIC_MODEL_PASSWD: CHANGE_IN_PROD
+      ACT_MODEL_DIR: /root/models/act_pos_50ep
     volumes:
-      - ../training_data:/root/training_data
-      - ../../models:/root/models
+      - /home/ubuntu/models:/root/models
 networks:
   default:
     internal: true
