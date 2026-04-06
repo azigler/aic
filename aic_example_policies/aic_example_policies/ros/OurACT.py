@@ -249,19 +249,7 @@ class OurACT(Policy):
                     w=float(quat[3]),
                 ),
             )
-            # Adaptive stiffness: lower Z compliance after approach phase
-            if step > 120:  # ~30s into trial, should be near port
-                stiffness = [90.0, 90.0, 30.0, 50.0, 50.0, 50.0]
-                damping = [50.0, 50.0, 15.0, 20.0, 20.0, 20.0]
-            else:
-                stiffness = [90.0, 90.0, 90.0, 50.0, 50.0, 50.0]
-                damping = [50.0, 50.0, 50.0, 20.0, 20.0, 20.0]
-            self.set_pose_target(
-                move_robot,
-                pose=target_pose,
-                stiffness=stiffness,
-                damping=damping,
-            )
+            self.set_pose_target(move_robot, pose=target_pose)
 
             if step % 20 == 0:
                 self.get_logger().info(
