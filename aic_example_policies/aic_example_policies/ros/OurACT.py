@@ -169,7 +169,7 @@ class OurACT(Policy):
         ensemble_k = 5  # number of recent predictions to average
         ensemble_decay = 0.5  # exponential decay weight
 
-        while time.time() - start < 60.0:  # 60s max
+        while time.time() - start < 60.0:
             obs = get_observation()
             if obs is None:
                 continue
