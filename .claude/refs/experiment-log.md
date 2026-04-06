@@ -19,7 +19,40 @@ Ran 10 experiments, mostly regressions due to:
 **Key finding:** We should use the competition's LeRobot ACTPolicy (RunACT.py)
 instead of our custom SimpleACT. This is the fundamental reset for Session 3.
 
-## Session 3: Fresh Start
+## Session 3: Velocity-Mode Fine-Tuning
 
-Starting from clean upstream with LeRobot-based approach.
-Goal: Fine-tune the pretrained ACTPolicy on our CheatCode demonstration data.
+### Infrastructure Fixes
+- Fixed run-eval.sh timing: start policy BEFORE eval container (not after)
+- Discovered `lerobot_robot_aic` — competition's LeRobot integration (missed in S1/S2)
+- Created DataCollector.py wrapping CheatCode for automated demo collection
+- Created RunACTLocal.py for evaluating local fine-tuned weights
+- Created train_act.py for fine-tuning from pretrained HuggingFace weights
+
+### Baseline Results
+- Pretrained RunACT (HuggingFace): **-21/300** (gets ~16-20cm from port)
+- CheatCode (ground truth): **~221/300** (successful insertions)
+
+### exp-050: First velocity-mode fine-tune (21 episodes, 50 epochs)
+- Score: **86.1/300** (+107 from pretrained)
+- Trial 1 (SFP): 44 pts, 5cm from port, proximity points
+- Trial 3 (SC): 41 pts, 3cm from port, nearly inserted
+- Trial 2: regression (14cm), config not well represented
+
+### exp-051: Training v2 (36 episodes, 50 epochs)
+- Score: **96.8/300** — trial 2 fixed (was 1.0 in v1)
+- All trials getting 3-5cm from ports
+
+### exp-052: Controller params experiment — DISCARD
+- lerobot params (high damping, no wrench): 39.6 — worse
+- RunACT original params are better for our model
+
+### exp-053: v2 with 30s limit (best config)
+- Score: **118.4/300** — 30s better than 60s (trajectory timing)
+
+### exp-054: v4 model (66 episodes, 50 epochs)
+- Score: **126.8/300** — SC trial improved to 39 pts
+- All 3 trials now consistently 5cm from port (25 tier3 each)
+- More data → better generalization across configs
+
+### Current best: v4 at 126.8/300
+Next goal: break through the 5cm barrier to achieve insertion (75 pts per trial)
