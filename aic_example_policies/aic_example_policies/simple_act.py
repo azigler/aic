@@ -83,21 +83,21 @@ class SimpleACT(nn.Module):
 
     def forward(
         self,
-        state: torch.Tensor,
         img_left: torch.Tensor,
         img_center: torch.Tensor,
         img_right: torch.Tensor,
+        state: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass.
 
         Args:
-            state: (B, state_dim) robot state
             img_left, img_center, img_right: (B, 3, H, W) camera images
+            state: (B, state_dim) robot state
 
         Returns:
             actions: (B, chunk_size, action_dim) predicted action chunk
         """
-        batch_size = state.shape[0]
+        batch_size = img_left.shape[0]
 
         # Encode each camera image
         feat_left = self.vision_backbone(img_left).flatten(1)  # (B, 512)

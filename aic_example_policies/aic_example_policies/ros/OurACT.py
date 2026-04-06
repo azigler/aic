@@ -41,18 +41,14 @@ class OurACT(Policy):
         )
         self.get_logger().info(f"Loading ACT model from {model_dir}")
 
-        # Read image size and offset mode from model config
+        # Read image size from model config if available, else use default
         config_path = os.path.join(model_dir, "config.json")
         if os.path.exists(config_path):
             with open(config_path) as f:
                 config = json.load(f)
             self.img_size = config.get("img_size", self.IMG_SIZE)
-            self.offset_mode = config.get("offset_mode", False)
         else:
             self.img_size = self.IMG_SIZE
-            self.offset_mode = False
-
-        self.get_logger().info(f"Offset mode: {self.offset_mode}")
 
         # Load normalization stats
         stats_path = os.path.join(model_dir, "normalization_stats.json")
@@ -87,13 +83,9 @@ class OurACT(Policy):
                 ).view(1, 3, 1, 1),
             }
 
-        # Load model (pretrained=False: we load full checkpoint, don't need ImageNet init)
+        # Load model
         self.model = SimpleACT(
-            state_dim=26,
-            action_dim=7,
-            chunk_size=50,
-            img_size=self.img_size,
-            pretrained=False,
+            state_dim=26, action_dim=7, chunk_size=50, img_size=self.img_size
         )
         checkpoint = torch.load(
             os.path.join(model_dir, "best_model.pt"), map_location=self.device
@@ -163,13 +155,8 @@ class OurACT(Policy):
 
         start = time.time()
         step = 0
-        # Temporal ensembling: buffer of action chunks for weighted averaging
-        # Each entry is (action_chunk, step_when_predicted)
-        ensemble_buffer: list[tuple[np.ndarray, int]] = []
-        ensemble_k = 5  # number of recent predictions to average
-        ensemble_decay = 0.5  # exponential decay weight
 
-        while time.time() - start < 60.0:
+        while time.time() - start < 60.0:  # 60s max
             obs = get_observation()
             if obs is None:
                 continue
@@ -180,52 +167,16 @@ class OurACT(Policy):
             img_right = self._process_image(obs.right_image, "right")
             state = self._extract_state(obs)
 
-            # Inference (SimpleACT.forward expects: state, img_left, img_center, img_right)
+            # Inference
             with torch.inference_mode():
-                action_norm = self.model(state, img_left, img_center, img_right)
+                action_norm = self.model(img_left, img_center, img_right, state)
 
-            # Un-normalize action chunk: shape (chunk_size, 7)
-            action_chunk = (
+            # Un-normalize action: 7D position target [x,y,z,qx,qy,qz,qw]
+            action = (
                 (action_norm[0] * self.action_std + self.action_mean)
                 .cpu()
                 .numpy()
             )
-
-            # Temporal ensembling: average overlapping chunk predictions
-            ensemble_buffer.append((action_chunk, step))
-            # Keep only recent predictions
-            if len(ensemble_buffer) > ensemble_k:
-                ensemble_buffer = ensemble_buffer[-ensemble_k:]
-
-            # Weighted average of all predictions for current timestep
-            weighted_sum = np.zeros(7, dtype=np.float64)
-            weight_total = 0.0
-            for chunk, pred_step in ensemble_buffer:
-                offset = (
-                    step - pred_step
-                )  # how many steps ago was this predicted
-                if offset < chunk.shape[0]:
-                    w = ensemble_decay**offset  # recent = higher weight
-                    weighted_sum += w * chunk[offset]
-                    weight_total += w
-
-            if weight_total > 0:
-                action = (weighted_sum / weight_total).astype(np.float32)
-            else:
-                action = action_chunk[0]
-
-            # In offset mode, action[:3] is a delta -- add to current TCP position
-            if self.offset_mode:
-                tcp = obs.controller_state.tcp_pose
-                target_xyz = np.array(
-                    [
-                        tcp.position.x + action[0],
-                        tcp.position.y + action[1],
-                        tcp.position.z + action[2],
-                    ]
-                )
-            else:
-                target_xyz = action[:3]
 
             # Normalize quaternion to ensure unit length
             quat = action[3:7]
@@ -236,11 +187,12 @@ class OurACT(Policy):
                 quat = np.array([0.0, 0.0, 0.0, 1.0])
 
             # Send position target via set_pose_target (uses MODE_POSITION)
+
             target_pose = Pose(
                 position=Point(
-                    x=float(target_xyz[0]),
-                    y=float(target_xyz[1]),
-                    z=float(target_xyz[2]),
+                    x=float(action[0]),
+                    y=float(action[1]),
+                    z=float(action[2]),
                 ),
                 orientation=Quaternion(
                     x=float(quat[0]),
@@ -253,7 +205,7 @@ class OurACT(Policy):
 
             if step % 20 == 0:
                 self.get_logger().info(
-                    f"Step {step}: pos=[{target_xyz[0]:.4f},{target_xyz[1]:.4f},{target_xyz[2]:.4f}]"
+                    f"Step {step}: action=[{action[0]:.4f},{action[1]:.4f},{action[2]:.4f}]"
                 )
 
             step += 1

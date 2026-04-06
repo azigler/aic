@@ -538,7 +538,7 @@ def train(args):
                 loss_dict = model.forward(obs_dict, action_chunk)
                 loss = loss_dict["loss"]
             else:
-                pred_actions = model(state, img_l, img_c, img_r)
+                pred_actions = model(img_l, img_c, img_r, state)
                 loss = loss_fn(pred_actions, action_chunk)
 
             optimizer.zero_grad()
@@ -576,7 +576,7 @@ def train(args):
                     loss_dict = model.forward(obs_dict, action_chunk)
                     loss = loss_dict["loss"]
                 else:
-                    pred_actions = model(state, img_l, img_c, img_r)
+                    pred_actions = model(img_l, img_c, img_r, state)
                     loss = loss_fn(pred_actions, action_chunk)
 
                 val_loss_sum += loss.item()
