@@ -163,6 +163,11 @@ class OurACT(Policy):
 
         start = time.time()
         step = 0
+        # Temporal ensembling: buffer of action chunks for weighted averaging
+        # Each entry is (action_chunk, step_when_predicted)
+        ensemble_buffer: list[tuple[np.ndarray, int]] = []
+        ensemble_k = 5  # number of recent predictions to average
+        ensemble_decay = 0.5  # exponential decay weight
 
         while time.time() - start < 60.0:  # 60s max
             obs = get_observation()
@@ -185,10 +190,31 @@ class OurACT(Policy):
                 .cpu()
                 .numpy()
             )
-            # Use first timestep from the chunk
-            action = action_chunk[0]  # shape (7,): [x, y, z, qx, qy, qz, qw]
 
-            # In offset mode, action[:3] is a delta — add to current TCP position
+            # Temporal ensembling: average overlapping chunk predictions
+            ensemble_buffer.append((action_chunk, step))
+            # Keep only recent predictions
+            if len(ensemble_buffer) > ensemble_k:
+                ensemble_buffer = ensemble_buffer[-ensemble_k:]
+
+            # Weighted average of all predictions for current timestep
+            weighted_sum = np.zeros(7, dtype=np.float64)
+            weight_total = 0.0
+            for chunk, pred_step in ensemble_buffer:
+                offset = (
+                    step - pred_step
+                )  # how many steps ago was this predicted
+                if offset < chunk.shape[0]:
+                    w = ensemble_decay**offset  # recent = higher weight
+                    weighted_sum += w * chunk[offset]
+                    weight_total += w
+
+            if weight_total > 0:
+                action = (weighted_sum / weight_total).astype(np.float32)
+            else:
+                action = action_chunk[0]
+
+            # In offset mode, action[:3] is a delta -- add to current TCP position
             if self.offset_mode:
                 tcp = obs.controller_state.tcp_pose
                 target_xyz = np.array(
@@ -223,7 +249,19 @@ class OurACT(Policy):
                     w=float(quat[3]),
                 ),
             )
-            self.set_pose_target(move_robot, pose=target_pose)
+            # Adaptive stiffness: lower Z compliance after approach phase
+            if step > 120:  # ~30s into trial, should be near port
+                stiffness = [90.0, 90.0, 30.0, 50.0, 50.0, 50.0]
+                damping = [50.0, 50.0, 15.0, 20.0, 20.0, 20.0]
+            else:
+                stiffness = [90.0, 90.0, 90.0, 50.0, 50.0, 50.0]
+                damping = [50.0, 50.0, 50.0, 20.0, 20.0, 20.0]
+            self.set_pose_target(
+                move_robot,
+                pose=target_pose,
+                stiffness=stiffness,
+                damping=damping,
+            )
 
             if step % 20 == 0:
                 self.get_logger().info(

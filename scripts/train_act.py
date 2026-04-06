@@ -96,6 +96,11 @@ def parse_args():
         action="store_true",
         help="Mark model as offset-mode (actions are position deltas)",
     )
+    parser.add_argument(
+        "--augment",
+        action="store_true",
+        help="Apply image augmentation during training (brightness, contrast, noise)",
+    )
     return parser.parse_args()
 
 
@@ -120,9 +125,11 @@ class DemoDataset(Dataset):
         episode_dirs: list[Path],
         chunk_size: int = 50,
         img_size: int = 256,
+        augment: bool = False,
     ):
         self.chunk_size = chunk_size
         self.img_size = img_size
+        self.augment = augment
         self.samples: list[
             tuple[Path, int, int]
         ] = []  # (episode_dir, timestep, ep_len)
@@ -135,6 +142,26 @@ class DemoDataset(Dataset):
             ep_len = len(actions)
             for t in range(ep_len):
                 self.samples.append((ep_dir, t, ep_len))
+
+    def _augment_image(self, img_tensor: torch.Tensor) -> torch.Tensor:
+        """Apply random augmentation to a CHW float [0,1] image tensor."""
+        # Random brightness (±20%)
+        if torch.rand(1).item() < 0.5:
+            factor = 0.8 + 0.4 * torch.rand(1).item()
+            img_tensor = (img_tensor * factor).clamp(0, 1)
+
+        # Random contrast (±20%)
+        if torch.rand(1).item() < 0.5:
+            mean = img_tensor.mean()
+            factor = 0.8 + 0.4 * torch.rand(1).item()
+            img_tensor = ((img_tensor - mean) * factor + mean).clamp(0, 1)
+
+        # Gaussian noise (small, std=0.02)
+        if torch.rand(1).item() < 0.5:
+            noise = torch.randn_like(img_tensor) * 0.02
+            img_tensor = (img_tensor + noise).clamp(0, 1)
+
+        return img_tensor
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -161,6 +188,8 @@ class DemoDataset(Dataset):
             img_tensor = (
                 torch.from_numpy(img_np).permute(2, 0, 1).float().div(255.0)
             )
+            if self.augment:
+                img_tensor = self._augment_image(img_tensor)
             imgs[cam] = img_tensor
 
         # Action chunk: actions[t:t+chunk_size], zero-padded if needed
@@ -345,12 +374,18 @@ def train(args):
     with open(args.output_dir / "config.json", "w") as f:
         json.dump(model_config, f, indent=2)
 
-    # Datasets
+    # Datasets (augment training data only, not validation)
     train_dataset = DemoDataset(
-        train_dirs, chunk_size=args.chunk_size, img_size=args.img_size
+        train_dirs,
+        chunk_size=args.chunk_size,
+        img_size=args.img_size,
+        augment=args.augment,
     )
     val_dataset = DemoDataset(
-        val_dirs, chunk_size=args.chunk_size, img_size=args.img_size
+        val_dirs,
+        chunk_size=args.chunk_size,
+        img_size=args.img_size,
+        augment=False,
     )
     print(
         f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}"
