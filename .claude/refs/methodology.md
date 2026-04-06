@@ -114,7 +114,7 @@ Based on analysis, choose next experiment:
 
 ## Approach Exploration Strategy
 
-We explored multiple branches and converged on the most promising path. After 24
+We explored multiple branches and converged on the most promising path. After 38
 experiments the exploration tree looks like this:
 
 ```
@@ -126,18 +126,18 @@ Root: Get Tier 1 passing (valid policy)
 │   ├── B1: IBVS (image-based visual servoing) -- best 110.4 (lucky), reliable ~90-100
 │   ├── B2: Template matching -- inconsistent
 │   └── B3: Color segmentation -- unreliable
-├── Branch C: ACT Imitation Learning -- ACTIVE (primary approach)
-│   ├── C1: Collect demos via CheatCode with domain randomization
-│   ├── C2: Train ACT on demos (2-3 hours per cycle)
-│   ├── C3: Hyperparameter tuning (chunk size, LR, batch size)
-│   └── C4: Scale up demos + fine-tune
+├── Branch C: ACT Imitation Learning -- ACTIVE, best 136.0 (15+ experiments)
+│   ├── C1: Velocity-mode ACT -- plateaued at 121.9 (8 configs, 100ep)
+│   ├── C2: **Position-mode ACT** -- best 136.0 (24 demos, 8 configs, 50ep)
+│   ├── C3: Overfitting experiments -- more data/epochs hurts (120.9)
+│   └── C4: Next: offset actions, higher resolution, task encoding
 └── Branch D: Reinforcement Learning -- Not started
     └── D1: Isaac Lab parallel training (fallback if ACT fails)
 ```
 
-**Current status:** Branch C (ACT) is the active primary approach. Branches A and B
-have been explored and plateaued. ACT hillclimbing is done via training config changes
-(hyperparameters, data quantity, domain randomization), not policy code changes.
+**Current status:** Branch C (ACT) with position-mode actions is the active primary
+approach. Branches A and B are exhausted. The breakthrough was switching from velocity
+to position actions (D-005). Sweet spot: 24 demos from 8 configs, 50 epochs.
 
 **Decision points:**
 - After each experiment, assess: is this branch worth continuing?
@@ -155,19 +155,20 @@ COLLECT DATA -> TRAIN MODEL -> EVALUATE -> ADJUST CONFIG -> REPEAT
 ```
 
 1. **Collect data:** Run `scripts/collect_demos.sh` on GPU instance. CheatCode
-   generates expert demonstrations with domain randomization. ~50-200 demos needed.
-   Data stored in `~/training_data/` on the GPU.
+   generates expert demonstrations with domain randomization. Sweet spot: 24 demos
+   from 8 board configs (3 demos per config). Data stored in `~/training_data/`.
 
-2. **Train model:** Run `scripts/train_act.py` on GPU instance. ~1-2 hours for
-   100 epochs on L4 GPU. Models stored in `~/models/`.
+2. **Train model:** Run `scripts/train_act.py` on GPU instance with position-mode
+   actions (default). ~11 min for 50 epochs on L4 GPU. Models stored in `~/models/`.
 
 3. **Evaluate:** Run 3-trial eval with the trained ACT policy. Parse scoring.yaml.
 
 4. **Adjust config:** Change hyperparameters based on results:
+   - Action mode: position (default, best) or offset (experimental)
    - Chunk size (10-100): larger = smoother but less reactive
    - Learning rate (~1e-4): cosine schedule
    - Batch size (32-64): limited by L4 VRAM (24GB)
-   - Number of demos: more = better generalization
+   - Number of configs: diversity matters more than quantity (8 configs sweet spot)
    - Domain randomization: board pose, port offset, grasp noise
 
 Key difference from classical experiments: the iteration variable is the training
@@ -179,14 +180,15 @@ config, not the policy source code. The policy code (RunACT) stays fixed.
 |-----------|------------|-------|---------|
 | Tier 1 pass | 1 | 3 | Policy loads and runs |
 | Proximity | 10-25 | 30-75 | Getting close to port |
+| **Current best** | **~45/trial** | **136** | **Position ACT, ~2cm from port** |
 | Partial insertion | 38-50 | 114-150 | In the port, not fully seated |
 | Full insertion | 75 | 225 | Connector fully inserted |
 | Optimized | 90+ | 270+ | Fast, smooth, efficient insertion |
 | Perfect | 100 | 300 | Theoretical max |
 
 **Qualification target:** We don't know the cutoff, but CheatCode scores ~88/trial
-(264 total). Assume top 30 needs at least 150+ (partial insertion on all trials).
-A competitive entry should target 200+.
+(264 total). Current best is 136/300. Next milestone: partial insertion on all trials
+(150+). A competitive entry should target 200+.
 
 ## Experiment Naming Convention
 

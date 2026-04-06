@@ -67,12 +67,17 @@ Vary these parameters across collection runs for generalization:
 
 ### Data Guidelines
 
-| Quantity | Expected Quality | Notes |
-|----------|-----------------|-------|
-| 50 demos | Minimum viable | May overfit to seen configs |
-| 100 demos | Good baseline | Reasonable generalization |
-| 200 demos | Strong | Covers most board configurations |
-| 500 demos | Comprehensive | Diminishing returns beyond this |
+Config diversity matters far more than demo quantity. Sweet spot: **24 demos from 8
+board configs** (3 demos per config). More data/configs shows diminishing returns and
+can cause overfitting.
+
+| Setup | Score | Notes |
+|-------|-------|-------|
+| 3 demos, 1 config | 102 | Proves pipeline works |
+| 6 demos, 2 configs | 120.7 | Huge jump from diversity |
+| 24 demos, 8 configs | **136.0** | **Current best (position mode)** |
+| 42 demos, 14 configs | 120.6 | More configs didn't help (velocity mode) |
+| 39 demos, 8 configs | 120.9 | More demos same configs = overfitting |
 
 Data lives in `~/training_data/` on the GPU instance.
 
@@ -110,31 +115,43 @@ pixi run python scripts/train_act.py --batch-size 32 --epochs 100
 | `chunk_size` | 50 | 10-100 | Larger = smoother but less reactive |
 | `lr` | 1e-4 | 1e-5 to 1e-3 | Standard with cosine schedule |
 | `batch_size` | 32 | 32-64 | Limited by L4 VRAM (24GB) |
-| `epochs` | 100 | 50-500 | More epochs if more data |
-| `img_size` | 224 | 128-320 | Larger = more detail but slower |
+| `epochs` | 50 | 30-100 | 50 is sweet spot; >50 overfits for 24 demos |
+| `img_size` | 256 | 128-384 | Larger = more detail but slower |
 | `num_cameras` | 3 | 1-3 | More = better perception, more VRAM |
 | `kl_weight` | 10 | 1-100 | Higher = more regularized latent space |
 | `hidden_dim` | 512 | 256-1024 | Model capacity |
 | `dim_feedforward` | 3200 | 1600-6400 | Transformer FFN width |
 | `num_layers` | 4 | 2-8 | Transformer depth |
 
+### Action Modes
+
+**Position mode (default, recommended):** Model predicts absolute TCP target poses.
+Matches CheatCode's output directly. No drift accumulation. val_loss ~0.29 vs 14-27
+for velocity mode.
+
+**Offset mode (experimental):** Model predicts relative TCP deltas. Translation-
+invariant, may generalize better to unseen board positions. Not yet validated.
+
+**Velocity mode (legacy):** Model predicts TCP velocities. Plateaued at 121.9.
+Superseded by position mode.
+
 ### Recommended Experiment Families
 
-Sweep one parameter at a time:
+Sweep one parameter at a time. Current best baseline: position mode, 24 demos,
+8 configs, 50 epochs = 136.0.
 
 ```
-Family: Chunk Size Sweep
-  - exp-A: chunk_size=10 -> score X
-  - exp-B: chunk_size=25 -> score Y
-  - exp-C: chunk_size=50 -> score Z
-  - exp-D: chunk_size=100 -> score W
-  -> Pick best, move to next family
+Family: Action Mode (highest priority)
+  - Position (baseline): 136.0
+  - Offset: ? (next experiment)
 
-Family: Data Quantity Sweep
-  - exp-A: 50 demos -> score X
-  - exp-B: 100 demos -> score Y
-  - exp-C: 200 demos -> score Z
-  -> Pick best, move to next family
+Family: Image Resolution
+  - 256px (baseline): 136.0
+  - 384px: ? (more detail at close range)
+
+Family: Regularization (to scale data)
+  - No regularization (baseline): overfits at >50ep
+  - Dropout / data augmentation: ?
 ```
 
 ### L4 GPU Memory Budget (24GB VRAM)
@@ -167,7 +184,7 @@ cat aic_results/scoring.yaml
 
 | Metric | Current Best | This Run | Delta |
 |--------|-------------|----------|-------|
-| Total | 110.4 | ? | ? |
+| Total | 136.0 | ? | ? |
 | Trial 1 (SFP) | ? | ? | ? |
 | Trial 2 (SFP) | ? | ? | ? |
 | Trial 3 (SC) | ? | ? | ? |

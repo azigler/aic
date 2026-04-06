@@ -23,12 +23,33 @@ distrobox + pixi is unlimited and runs the exact same scoring engine.
 Only submit to cloud when we have a verified personal best.
 **Status:** DECIDED
 
-## Pending Decisions
-
 ### D-004: Which vision approach for port detection?
+**Date:** 2026-03-27
 **Options:**
 - Template matching on camera images
 - Neural network (pretrained detector fine-tuned on port images)
 - Stereo depth estimation from 3 wrist cameras
 - Use TF frames during training, learn to infer at eval time
-**Status:** OPEN -- depends on Branch A results
+**Decision:** End-to-end ACT. After 16 experiments on Branch B (camera perception),
+all explicit vision approaches plateaued at ~100. ACT learns implicit perception
+from raw images, bypassing the need for a separate vision pipeline.
+**Status:** DECIDED
+
+### D-005: Position-mode ACT over velocity-mode
+**Date:** 2026-04-05
+**Rationale:** Switching ACT from velocity actions to position (absolute TCP target
+pose) actions dropped val_loss 50-100x (0.29 vs 14-27) and raised score from ~120
+to 131-136. Position targets match CheatCode's output directly and don't accumulate
+drift like velocity predictions.
+**Status:** DECIDED
+
+## Pending Decisions
+
+### D-006: Offset actions (relative position deltas)
+**Options:**
+- Keep absolute position targets (current best, 136.0)
+- Switch to relative TCP deltas (translation-invariant, may generalize better)
+**Rationale:** Absolute positions encode board location implicitly. Offset actions
+would decouple the learned policy from specific board positions, potentially
+improving generalization to unseen randomizations.
+**Status:** OPEN -- highest priority next experiment

@@ -110,11 +110,10 @@ docker compose -f docker/docker-compose.yaml up
 ### Score Table
 
 ```
-| Experiment | Trial 1 | Trial 2 | Trial 3 | Total |
-|------------|---------|---------|---------|-------|
-| baseline   |    45   |    42   |    38   |  125  |
-| exp_002    |    72   |    68   |    55   |  195  |
-| exp_003    |    85   |    82   |    70   |  237  |
+| Experiment | Trial 1 | Trial 2 | Trial 3 | Total | vs Best (136.0) |
+|------------|---------|---------|---------|-------|-----------------|
+| exp-035    |    48   |    46   |    42   |  136  | baseline        |
+| exp-NNN    |     ?   |     ?   |     ?   |    ?  | +/-?            |
 ```
 
 ### Key Metrics to Track
@@ -138,13 +137,17 @@ When a trial scores low, diagnose:
 
 ## Baseline Scores
 
-| Policy | Trial 1 (SFP) | Trial 2 (SFP) | Trial 3 (SC) | Description |
-|--------|---------------|---------------|--------------|-------------|
-| WaveArm | ~1 | ~1 | ~1 | Just waves, no insertion |
-| CheatCode | ~80 | ~80 | ~80 | Ground truth, reference score |
+| Policy | Total | Description |
+|--------|-------|-------------|
+| WaveArm | 42.3 | Baseline, no insertion |
+| CheatCode | ~264 | Ground truth, reference upper bound |
+| Classical best (exp-004) | 93.4 | Branch A plateau |
+| Camera best (exp-017c) | 110.4 | Branch B lucky run, reliable ~100 |
+| ACT velocity (exp-029) | 121.9 | Branch C velocity-mode plateau |
+| **ACT position (exp-035)** | **136.0** | **Current best, position mode** |
 
-CheatCode is the upper bound for what's achievable. Your policy should aim to
-match or exceed its insertion rate while being robust to randomization.
+True average for position-mode ACT: ~128 (120-136 range from randomization variance).
+A single eval is not reliable -- need 3-5 runs for trends.
 
 ## Cloud Evaluation
 

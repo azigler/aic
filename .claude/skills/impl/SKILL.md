@@ -19,14 +19,15 @@ A Python policy class that controls a UR5e robot to insert fiber optic connector
 ### Option A: End-to-End ACT (RECOMMENDED -- Primary Approach)
 
 ```
-cameras + proprioception -> ACT neural network -> action chunks -> controller
+cameras + proprioception -> ACT neural network -> position action chunks -> controller
 ```
 
+- **Position-mode actions** (predicts absolute TCP target poses, not velocities)
 - Train on CheatCode demonstrations with domain randomization
 - ACT baseline provided in `aic_example_policies/` (RunACT)
 - Iteration is via training config changes, not policy code changes
 - See `/train` for the full ACT pipeline
-- **This is the active development path (Branch C)**
+- **Current best: 136.0 (24 demos, 8 configs, 50 epochs)**
 
 ### Option B: Perception + Classical Control (Fallback)
 
@@ -157,7 +158,7 @@ Max wrench safety clamp: ±10N force, ±10Nm torque
 | Context | Stiffness [xyz,rxryrz] | Damping [xyz,rxryrz] | Notes |
 |---------|------------------------|----------------------|-------|
 | Free space motion | [90,90,90,50,50,50] | [50,50,50,20,20,20] | CheatCode defaults |
-| RunACT inference | [100,100,100,50,50,50] | [40,40,40,15,15,15] | Higher stiffness, velocity mode |
+| RunACT inference (position mode) | [100,100,100,50,50,50] | [40,40,40,15,15,15] | Higher stiffness, position targets |
 | Approach | [50-90,50-90,50-90,...] | [35-50,...] | Medium compliance |
 | Insertion | [30-50,30-50,20-30,...] | [20-40,...] | Low Z stiffness for compliance |
 | Contact detection | [10-30,...] | [15-30,...] | Very compliant, feel the port |

@@ -203,23 +203,28 @@ the policy source code.
    ```
 
 4. **Iterate** by adjusting training config:
+   - Action mode: position (default, best) or offset (experimental)
    - Chunk size (10-100)
    - Learning rate (1e-5 to 1e-3)
    - Batch size (32-64, limited by L4 VRAM)
-   - Number of demonstrations (50-500)
-   - Domain randomization parameters
-   - Image resolution (224x224 typical)
+   - Config diversity (8 configs sweet spot, 3 demos each)
+   - Epochs (50 sweet spot; >50 overfits for current data)
+   - Image resolution (256x256 default)
 
 ### What to Vary in ACT Experiments
 
-ACT hillclimbing changes training configs, not policy code. Common experiment
-families:
+ACT hillclimbing changes training configs, not policy code. Position mode is default.
+Current best: 24 demos, 8 configs, 50 epochs = 136.0. Common experiment families:
 
-- **Data quantity sweep:** 50 / 100 / 200 / 500 demos
-- **Chunk size sweep:** 10 / 25 / 50 / 100
-- **Learning rate sweep:** 1e-5 / 5e-5 / 1e-4 / 5e-4
-- **Domain randomization level:** none / mild / aggressive
-- **Camera input:** 1 camera / 2 cameras / all 3
+- **Action mode:** position (best) / offset (next frontier)
+- **Image resolution:** 256 (default) / 384 (more close-range detail)
+- **Regularization:** dropout / data augmentation (to scale past 50ep)
+- **Task encoding:** tell model which port type (SFP vs SC)
+- **Config diversity:** vary board configs (8 is current sweet spot)
+
+**Note:** Data quantity sweeps (50-500 demos) and chunk size sweeps are largely
+exhausted. The biggest remaining gains are in action representation (offset mode)
+and better generalization (regularization, augmentation).
 
 ## Branches Quick Reference
 
@@ -227,7 +232,7 @@ families:
 |--------|----------|------------|-----------|--------|
 | A: Classical | Hardcoded + force control | Low-Medium | 50-80/trial | Plateau at 93.4 |
 | B: Camera | IBVS + template matching | Medium | 80-100/trial | Plateau at ~100 |
-| C: ACT | Imitation learning on demos | Medium-High | 60-95/trial | **Active** |
+| C: ACT | Imitation learning on demos | Medium-High | 131-136 total (position mode) | **Active -- best 136.0** |
 | D: RL | Reward-shaped RL | High | 50-100/trial | Not started |
 
 **Current path:** Branch C (ACT). Branches A and B are exhausted.
