@@ -48,3 +48,4 @@ b93c1d9	136.0	480	best	C	exp-035: position ACT (24 demos, 8 configs, 50ep) -- NE
 88d0195	120.9	480	discard	C	exp-036: last-2s only -- model can't approach without full trajectory
 9f65c43	120.9	480	discard	C	exp-037: pos ACT 70ep/39demos -- overfitted, worse than 50ep
 1b265b2	120.9	480	keep	C	exp-038: pos ACT + weight decay -- 120.9 (randomization variance)
+338df22	111.6	480	discard	C	exp-039: offset actions (delta positions) -- REGRESSION from 136, error accumulation

@@ -175,16 +175,18 @@ class OurACT(Policy):
             img_right = self._process_image(obs.right_image, "right")
             state = self._extract_state(obs)
 
-            # Inference
+            # Inference (SimpleACT.forward expects: state, img_left, img_center, img_right)
             with torch.inference_mode():
-                action_norm = self.model(img_left, img_center, img_right, state)
+                action_norm = self.model(state, img_left, img_center, img_right)
 
-            # Un-normalize action
-            action = (
+            # Un-normalize action chunk: shape (chunk_size, 7)
+            action_chunk = (
                 (action_norm[0] * self.action_std + self.action_mean)
                 .cpu()
                 .numpy()
             )
+            # Use first timestep from the chunk
+            action = action_chunk[0]  # shape (7,): [x, y, z, qx, qy, qz, qw]
 
             # In offset mode, action[:3] is a delta — add to current TCP position
             if self.offset_mode:
@@ -225,7 +227,7 @@ class OurACT(Policy):
 
             if step % 20 == 0:
                 self.get_logger().info(
-                    f"Step {step}: action=[{action[0]:.4f},{action[1]:.4f},{action[2]:.4f}]"
+                    f"Step {step}: pos=[{target_xyz[0]:.4f},{target_xyz[1]:.4f},{target_xyz[2]:.4f}]"
                 )
 
             step += 1
