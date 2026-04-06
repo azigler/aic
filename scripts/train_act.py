@@ -101,6 +101,12 @@ def parse_args():
         action="store_true",
         help="Apply image augmentation during training (brightness, contrast, noise)",
     )
+    parser.add_argument(
+        "--oversample-end",
+        type=int,
+        default=0,
+        help="Oversample last N timesteps of each episode by 3x (JUICER-style)",
+    )
     return parser.parse_args()
 
 
@@ -126,6 +132,7 @@ class DemoDataset(Dataset):
         chunk_size: int = 50,
         img_size: int = 256,
         augment: bool = False,
+        oversample_end: int = 0,
     ):
         self.chunk_size = chunk_size
         self.img_size = img_size
@@ -142,6 +149,10 @@ class DemoDataset(Dataset):
             ep_len = len(actions)
             for t in range(ep_len):
                 self.samples.append((ep_dir, t, ep_len))
+                # JUICER-style: oversample end-of-episode timesteps
+                if oversample_end > 0 and t >= ep_len - oversample_end:
+                    self.samples.append((ep_dir, t, ep_len))
+                    self.samples.append((ep_dir, t, ep_len))
 
     def _augment_image(self, img_tensor: torch.Tensor) -> torch.Tensor:
         """Apply random augmentation to a CHW float [0,1] image tensor."""
@@ -374,18 +385,20 @@ def train(args):
     with open(args.output_dir / "config.json", "w") as f:
         json.dump(model_config, f, indent=2)
 
-    # Datasets (augment training data only, not validation)
+    # Datasets (augment and oversample training data only, not validation)
     train_dataset = DemoDataset(
         train_dirs,
         chunk_size=args.chunk_size,
         img_size=args.img_size,
         augment=args.augment,
+        oversample_end=args.oversample_end,
     )
     val_dataset = DemoDataset(
         val_dirs,
         chunk_size=args.chunk_size,
         img_size=args.img_size,
         augment=False,
+        oversample_end=0,
     )
     print(
         f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}"
