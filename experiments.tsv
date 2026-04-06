@@ -53,3 +53,4 @@ b93c1d9	136.0	480	best	C	exp-035: position ACT (24 demos, 8 configs, 50ep) -- NE
 ae35175	111.5	480	discard	C	exp-045: adaptive stiffness scored 111.5 -- DISCARD, drift during approach
 16d81d5	86.3	480	discard	C	exp-046: 120s time limit -- DISCARD, oscillation causes penalties
 144b280	88.4	480	discard	C	exp-043: data augmentation (brightness/contrast/noise) -- DISCARD, destroyed precision
+4c63601	106.1	480	discard	C	exp-047: bottleneck oversampling scored 106.1 -- DISCARD, approach degraded
