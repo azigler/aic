@@ -1,0 +1,31 @@
+name: aic-collect
+services:
+  eval:
+    image: ghcr.io/intrinsic-dev/aic/aic_eval
+    command: gazebo_gui:=false launch_rviz:=false ground_truth:=true start_aic_engine:=true shutdown_on_aic_engine_exit:=true
+    gpus: all
+    networks:
+      - default
+    environment:
+      AIC_EVAL_PASSWD: CHANGE_IN_PROD
+      AIC_MODEL_PASSWD: CHANGE_IN_PROD
+      AIC_RESULTS_DIR: /aic_results
+    volumes:
+      - ../aic_results:/aic_results
+      - ./collect_config:/ws_aic/install/share/aic_engine/config
+  model:
+    image: my-solution:v1
+    command: --ros-args -p policy:=aic_example_policies.ros.DataCollector
+    gpus: all
+    networks:
+      - default
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_ROUTER_CHECK_ATTEMPTS: -1
+      AIC_ROUTER_ADDR: eval:7447
+      AIC_MODEL_PASSWD: CHANGE_IN_PROD
+    volumes:
+      - /home/ubuntu/training_data_new:/root/training_data
+networks:
+  default:
+    internal: true
