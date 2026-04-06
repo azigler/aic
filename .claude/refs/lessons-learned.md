@@ -118,11 +118,50 @@ Accumulated from 32 experiments across 3 branches, ~$15 GPU cost, 2 days.
 | 8 | 93.4 | DirectApproach v2 | A | Best classical, partial insertion |
 | 9 | 78.4 | DirectApproach v1 | A | First proximity points |
 
+## Position-Mode ACT Breakthrough (exp-034+)
+
+Switching from velocity to position-mode actions was the biggest single improvement:
+- val_loss dropped 50-100× (0.29 vs 14-27)
+- Score jumped from ~120 to 131-136
+- The model now predicts absolute TCP target poses (matching CheatCode's output)
+- Position targets don't accumulate drift like velocities do
+
+**Sweet spot:** 24 demos from 8 configs, 50 epochs. More data/epochs OVERFITS.
+
+## Overfitting Pattern
+
+- train_loss 0.08 vs val_loss 0.17 = 2× gap = overfitting
+- More epochs (70-100) scored WORSE than 50 epochs
+- More data (39 demos) didn't help vs 24 demos with same config diversity
+- Need regularization (weight decay, dropout, data augmentation) to scale further
+
+## Score Variance
+
+Position-mode ACT scores 120-136 depending on randomized board config.
+True average: ~128. A single eval is NOT reliable -- need 3-5 runs for trends.
+
+## SSH Training Kills
+
+ALWAYS use nohup for GPU training:
+```bash
+ssh gpu "nohup pixi run python scripts/train_act.py ... > /tmp/train.log 2>&1 &"
+```
+Training at epoch 70/100 was killed by SSH timeout. Use nohup or tmux.
+
+## Docker ACT_MODEL_DIR
+
+The docker-compose.yaml MUST have ACT_MODEL_DIR in the model service environment.
+It gets dropped by sed edits. Always verify:
+```bash
+ssh gpu "grep ACT_MODEL_DIR ~/ws_aic/src/aic/docker/docker-compose.yaml"
+```
+Without it, OurACT defaults to ~/models/act_micro (the old velocity model).
+
 ## What to Try Next
 
-1. **More diverse configs** (14→30+) with ACT training
-2. **Position-mode actions** instead of velocity (match CheatCode more directly)
-3. **Combine IBVS + ACT** (HybridPolicy already written, not yet tested)
-4. **Image augmentation** during training (crops, brightness, noise)
-5. **Larger model** if diverse data saturates SimpleACT capacity
-6. **Train on SC-specific demos** separately if SC trial remains weak
+1. **Offset actions** (relative position, translation-invariant) -- highest potential
+2. **Higher image resolution** (384×384) -- more visual detail at close range
+3. **Task encoding** -- tell model which port to target (helps SC trials)
+4. **Data augmentation** (image noise, brightness) -- prevent overfitting
+5. **Establish variance baseline** -- run best model 5× to know true average
+6. **HybridPolicy** -- tested, scored same as pure ACT (120.6). Not useful.
