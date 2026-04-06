@@ -20,12 +20,28 @@ Running summary of all experiments. Updated after each `/experiment log`.
 | 12 | WaveArm baseline | 42.3 | -- | |
 | 13 | exp-001 BlindPush | 3.0 | A | Force threshold too low |
 
-## Current Best
+## Current Best (Docker Verified)
 
-**Score:** 136.0/300 (position-mode ACT, exp-035)
-**True average:** ~128 (120-136 range from randomization variance)
+**Score:** 118.6/300 (position-mode ACT + temporal ensembling, exp-044)
+**Docker baseline:** 114.4 (fixed argument order + chunk indexing bugs)
 **Model:** ~/models/act_pos_50ep on GPU (24 demos, 8 configs, 50 epochs)
 **Bottleneck:** ~5cm XY gap to port. No full insertions yet (75 pts/trial).
+
+Note: Previous 136.0 claim was from pixi eval with broken argument order.
+Docker eval with fixed code establishes 114.4 as the true baseline.
+
+## Session 2 Experiments (Docker-verified)
+
+| Exp | Description | Score | vs Baseline | Verdict |
+|-----|-------------|-------|-------------|---------|
+| 042 | Docker baseline (fixed bugs) | 114.4 | — | BASELINE |
+| 044 | Temporal ensembling | **118.6** | **+4.2** | **KEPT** |
+| 039 | Offset actions | 111.6 | -2.8 | DISCARD |
+| 043 | Data augmentation | 88.4 | -26.0 | DISCARD |
+| 045 | Adaptive stiffness | 111.5 | -2.9 | DISCARD |
+| 046 | 120s time limit | 86.3 | -28.1 | DISCARD |
+| 047 | Bottleneck oversampling | 106.1 | -8.3 | DISCARD |
+| 048 | More diverse data | in progress | — | COLLECTING |
 
 ## Branch Status
 
