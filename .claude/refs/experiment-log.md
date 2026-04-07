@@ -63,5 +63,16 @@ instead of our custom SimpleACT. This is the fundamental reset for Session 3.
 - Confirmed: 200 epochs on 66 episodes is too much
 - Lesson: need MORE DATA not more epochs
 
-### Current best: v5 at 152.9/300 (2 partial insertions + 1 proximity)
-Next: collect ~120+ episodes total, retrain at 100 epochs
+### exp-057: V2 collector (P-controller velocity) — DISCARD
+- K_lin=2.0 generated 10x too large velocities
+- 163N force spikes, score 3/300
+
+### exp-058: v8 (126 eps, 150 epochs) — IN PROGRESS (may be stale)
+### Variance check on v5: scores 139-168 across runs
+- Config randomization creates high variance
+- v5 remains best model
+
+### Current best: v5 at 139-168/300 (median ~152)
+- 66 episodes, 100 epochs, lr=5e-6
+- Achieves partial insertion on SFP, proximity on SC
+- Path to full insertion needs better insertion dynamics

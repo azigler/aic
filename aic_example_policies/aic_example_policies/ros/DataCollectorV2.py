@@ -1,9 +1,7 @@
 #
-#  DataCollector - Wraps CheatCode to record velocity-mode training data
-#  for LeRobot ACTPolicy fine-tuning.
-#
-#  Records: 3 camera images (288x256), 26D state, 7D velocity action
-#  Saves episodes as numpy arrays for later conversion to LeRobot format.
+#  DataCollectorV2 - Records velocity commands computed from CheatCode's
+#  position targets. This produces better training labels than observed
+#  TCP velocity because it maintains a nonzero signal during insertion.
 #
 
 import os
@@ -18,23 +16,30 @@ from aic_model.policy import (
 )
 from aic_model_interfaces.msg import Observation
 from aic_task_interfaces.msg import Task
+from geometry_msgs.msg import Pose
 from rclpy.node import Node
 
 from .CheatCode import CheatCode
 
 
-class DataCollector(CheatCode):
-    """Wraps CheatCode to record expert demonstrations for ACT training.
+class DataCollectorV2(CheatCode):
+    """Records velocity actions computed from CheatCode's position targets.
 
-    Records observations and velocity actions while CheatCode solves the task.
-    The velocity action is the observed TCP velocity (what the robot actually does),
-    which is the correct label for training a velocity-mode policy like RunACT.
+    Instead of recording the observed TCP velocity (which goes to ~0 near
+    insertion as the controller settles), this computes the velocity as:
+
+        v_linear = K_lin * (target_position - current_position)
+        v_angular = observed angular velocity (hard to compute from quaternions)
+
+    This gives a nonzero velocity signal that points toward the insertion
+    target, which is what a velocity-mode policy should output.
     """
 
     def __init__(self, parent_node: Node):
         super().__init__(parent_node)
         self._recording = False
         self._get_observation = None
+        self._last_target_pose = None
         self._episode_data = {
             "states": [],
             "actions": [],
@@ -44,23 +49,23 @@ class DataCollector(CheatCode):
             "timestamps": [],
         }
         self._save_dir = os.environ.get(
-            "TRAINING_DATA_DIR", os.path.expanduser("~/training_data_velocity")
+            "TRAINING_DATA_DIR",
+            os.path.expanduser("~/training_data_v2"),
         )
         os.makedirs(self._save_dir, exist_ok=True)
         self._episode_count = self._count_existing_episodes()
-        self._image_scaling = 0.25  # Match RunACT: 1152x1024 -> 288x256
-        # Record at 10Hz for better insertion dynamics capture
-        # RunACT runs at 4Hz but we want higher fidelity training data
-        record_hz = float(os.environ.get("RECORD_HZ", "10"))
+        self._image_scaling = 0.25
+        record_hz = float(os.environ.get("RECORD_HZ", "4"))
         self._record_interval = 1.0 / record_hz
         self._last_record_time = 0.0
+        # Gain for converting position error to velocity command
+        self._k_lin = float(os.environ.get("K_LIN", "2.0"))
         self.get_logger().info(
-            f"DataCollector initialized. Save dir: {self._save_dir}, "
-            f"Existing episodes: {self._episode_count}"
+            f"DataCollectorV2 initialized. Save dir: {self._save_dir}, "
+            f"K_lin: {self._k_lin}, record_hz: {record_hz}"
         )
 
     def _count_existing_episodes(self) -> int:
-        """Count existing episode directories."""
         count = 0
         if os.path.exists(self._save_dir):
             for d in os.listdir(self._save_dir):
@@ -69,7 +74,6 @@ class DataCollector(CheatCode):
         return count
 
     def _extract_state(self, obs: Observation) -> np.ndarray:
-        """Extract 26D state vector matching RunACT's prepare_observations."""
         tcp_pose = obs.controller_state.tcp_pose
         tcp_vel = obs.controller_state.tcp_velocity
         return np.array(
@@ -93,31 +97,45 @@ class DataCollector(CheatCode):
             dtype=np.float32,
         )
 
-    def _extract_velocity_action(self, obs: Observation) -> np.ndarray:
-        """Extract 7D velocity action from observation.
+    def _compute_velocity_action(
+        self, obs: Observation, target_pose: Pose
+    ) -> np.ndarray:
+        """Compute velocity command from position error to target.
 
-        Uses the actual TCP velocity as the expert action.
-        This is what the robot achieved while following CheatCode's position targets.
-        action[0:3] = linear velocity (x, y, z)
-        action[3:6] = angular velocity (x, y, z)
-        action[6] = gripper (constant, matching pretrained model)
+        v_lin = K * (target_pos - current_pos)
+        v_ang = observed angular velocity (from state)
+
+        This produces a nonzero velocity signal that points toward
+        the insertion target, even when the robot is very close.
         """
+        tcp_pose = obs.controller_state.tcp_pose
         tcp_vel = obs.controller_state.tcp_velocity
-        return np.array(
+
+        # Linear velocity: P-controller on position error
+        pos_error = np.array(
             [
-                tcp_vel.linear.x,
-                tcp_vel.linear.y,
-                tcp_vel.linear.z,
+                target_pose.position.x - tcp_pose.position.x,
+                target_pose.position.y - tcp_pose.position.y,
+                target_pose.position.z - tcp_pose.position.z,
+            ]
+        )
+        lin_vel = self._k_lin * pos_error
+
+        # Angular velocity: use observed (computing from quaternion diff is noisy)
+        ang_vel = np.array(
+            [
                 tcp_vel.angular.x,
                 tcp_vel.angular.y,
                 tcp_vel.angular.z,
-                0.012,  # Gripper constant (matches pretrained action_mean[6])
-            ],
+            ]
+        )
+
+        return np.array(
+            [*lin_vel, *ang_vel, 0.012],
             dtype=np.float32,
         )
 
     def _extract_image(self, raw_img) -> np.ndarray:
-        """Convert ROS Image to scaled numpy array (H, W, 3) uint8."""
         img_np = np.frombuffer(raw_img.data, dtype=np.uint8).reshape(
             raw_img.height, raw_img.width, 3
         )
@@ -131,27 +149,7 @@ class DataCollector(CheatCode):
             )
         return img_np
 
-    def _record_observation(self, get_observation: GetObservationCallback):
-        """Record a single observation + action pair."""
-        obs = get_observation()
-        if obs is None:
-            return
-
-        state = self._extract_state(obs)
-        action = self._extract_velocity_action(obs)
-        img_left = self._extract_image(obs.left_image)
-        img_center = self._extract_image(obs.center_image)
-        img_right = self._extract_image(obs.right_image)
-
-        self._episode_data["states"].append(state)
-        self._episode_data["actions"].append(action)
-        self._episode_data["images_left"].append(img_left)
-        self._episode_data["images_center"].append(img_center)
-        self._episode_data["images_right"].append(img_right)
-        self._episode_data["timestamps"].append(time.time())
-
     def _save_episode(self):
-        """Save recorded episode data as numpy arrays."""
         n_steps = len(self._episode_data["states"])
         if n_steps < 10:
             self.get_logger().warn(
@@ -177,7 +175,6 @@ class DataCollector(CheatCode):
             np.array(self._episode_data["timestamps"]),
         )
 
-        # Save images as individual files (more memory-efficient for large datasets)
         for i in range(n_steps):
             np.save(
                 os.path.join(ep_dir, f"images_left_{i:04d}.npy"),
@@ -193,12 +190,12 @@ class DataCollector(CheatCode):
             )
 
         self.get_logger().info(
-            f"Saved episode {self._episode_count} with {n_steps} steps to {ep_dir}"
+            f"Saved episode {self._episode_count} with {n_steps} steps "
+            f"to {ep_dir}"
         )
         self._episode_count += 1
 
     def _reset_episode(self):
-        """Clear episode buffer."""
         self._episode_data = {
             "states": [],
             "actions": [],
@@ -208,6 +205,23 @@ class DataCollector(CheatCode):
             "timestamps": [],
         }
         self._last_record_time = 0.0
+        self._last_target_pose = None
+
+    def set_pose_target(
+        self,
+        move_robot,
+        pose,
+        frame_id="base_link",
+        stiffness=None,
+        damping=None,
+    ):
+        """Override to capture the target pose for velocity computation."""
+        if stiffness is None:
+            stiffness = [90.0, 90.0, 90.0, 50.0, 50.0, 50.0]
+        if damping is None:
+            damping = [50.0, 50.0, 50.0, 20.0, 20.0, 20.0]
+        self._last_target_pose = pose
+        super().set_pose_target(move_robot, pose, frame_id, stiffness, damping)
 
     def insert_cable(
         self,
@@ -216,40 +230,42 @@ class DataCollector(CheatCode):
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
     ):
-        """Run CheatCode while recording observations and velocity actions."""
         self.get_logger().info(
-            f"DataCollector.insert_cable() task: {task}, "
+            f"DataCollectorV2.insert_cable() task: {task}, "
             f"recording episode {self._episode_count}"
         )
         self._reset_episode()
         self._recording = True
         self._get_observation = get_observation
 
-        # Run CheatCode's insertion (which calls our overridden sleep_for)
         result = super().insert_cable(
             task, get_observation, move_robot, send_feedback
         )
 
         self._recording = False
-
-        # Save the episode
         self._save_episode()
 
         self.get_logger().info(
-            f"DataCollector.insert_cable() done, result={result}"
+            f"DataCollectorV2.insert_cable() done, result={result}"
         )
         return result
 
     def sleep_for(self, duration_sec: float) -> None:
-        """Override sleep_for to record observations during CheatCode's sleeps."""
-        if self._recording and self._get_observation is not None:
+        """Record during sleeps, using target pose for velocity computation."""
+        if (
+            self._recording
+            and self._get_observation is not None
+            and self._last_target_pose is not None
+        ):
             now = time.time()
             if (now - self._last_record_time) >= self._record_interval:
                 obs = self._get_observation()
                 if obs is not None:
                     self._last_record_time = now
                     state = self._extract_state(obs)
-                    action = self._extract_velocity_action(obs)
+                    action = self._compute_velocity_action(
+                        obs, self._last_target_pose
+                    )
                     img_left = self._extract_image(obs.left_image)
                     img_center = self._extract_image(obs.center_image)
                     img_right = self._extract_image(obs.right_image)
@@ -261,5 +277,4 @@ class DataCollector(CheatCode):
                     self._episode_data["images_right"].append(img_right)
                     self._episode_data["timestamps"].append(now)
 
-        # Call the actual sleep
         super().sleep_for(duration_sec)
