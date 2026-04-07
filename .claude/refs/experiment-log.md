@@ -54,5 +54,14 @@ instead of our custom SimpleACT. This is the fundamental reset for Session 3.
 - All 3 trials now consistently 5cm from port (25 tier3 each)
 - More data → better generalization across configs
 
-### Current best: v4 at 126.8/300
-Next goal: break through the 5cm barrier to achieve insertion (75 pts per trial)
+### exp-055: v5 (66 eps, 100 epochs, lr=5e-6) — PARTIAL INSERTION!
+- Score: **152.9/300** — SFP trials achieved PARTIAL INSERTION (38 tier3)
+- Key: 100 epochs + lower lr pushed through the 5cm barrier
+
+### exp-056: v6 (66 eps, 200 epochs, lr=5e-6) — OVERFITTING
+- Score: **83.9/300** — REGRESSION, trial 1 went to 14cm
+- Confirmed: 200 epochs on 66 episodes is too much
+- Lesson: need MORE DATA not more epochs
+
+### Current best: v5 at 152.9/300 (2 partial insertions + 1 proximity)
+Next: collect ~120+ episodes total, retrain at 100 epochs
