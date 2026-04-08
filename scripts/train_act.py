@@ -86,6 +86,9 @@ class VelocityDemoDataset(Dataset):
         )
         self.action_std[self.action_std < 1e-6] = 1.0
 
+        # Build weighted sample index (oversample insertion phase)
+        self._build_sample_index(insertion_weight=3.0)
+
         # Compute image normalization stats from a sample
         self._compute_image_stats()
 
@@ -109,18 +112,31 @@ class VelocityDemoDataset(Dataset):
         self.img_std[self.img_std < 1e-6] = 1.0
 
     def __len__(self):
-        return self.cumulative_lengths[-1] if self.cumulative_lengths else 0
+        return len(self._sample_index)
 
-    def _find_episode_and_step(self, idx):
-        """Convert global index to (episode_idx, step_idx)."""
-        for ep_idx, cum_len in enumerate(self.cumulative_lengths):
-            if idx < cum_len:
-                prev = self.cumulative_lengths[ep_idx - 1] if ep_idx > 0 else 0
-                return ep_idx, idx - prev
-        raise IndexError(f"Index {idx} out of range")
+    def _build_sample_index(self, insertion_weight: float = 3.0):
+        """Build weighted sample index that oversamples the insertion phase.
+
+        The last 30% of each episode (insertion/descent) gets repeated
+        insertion_weight times to give the model more examples of the
+        fine insertion movements.
+        """
+        self._sample_index = []
+        for ep_idx, ep in enumerate(self.episodes):
+            insertion_start = int(ep["length"] * 0.7)
+            for step in range(ep["length"]):
+                self._sample_index.append((ep_idx, step))
+                # Oversample the insertion phase
+                if step >= insertion_start:
+                    for _ in range(int(insertion_weight) - 1):
+                        self._sample_index.append((ep_idx, step))
+        print(
+            f"Sample index: {len(self._sample_index)} entries "
+            f"(insertion_weight={insertion_weight})"
+        )
 
     def __getitem__(self, idx):
-        ep_idx, step_idx = self._find_episode_and_step(idx)
+        ep_idx, step_idx = self._sample_index[idx]
         ep = self.episodes[ep_idx]
 
         # State
