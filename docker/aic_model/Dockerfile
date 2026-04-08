@@ -56,5 +56,14 @@ echo "ZENOH_CONFIG_OVERRIDE=$ZENOH_CONFIG_OVERRIDE"
 exec pixi run --as-is ros2 run aic_model aic_model "$@"
 EOF
 
+# Add fine-tuned model weights (copy from GPU local path)
+# The model_weights/ directory must be created before Docker build:
+#   mkdir -p docker/aic_model/model_weights
+#   cp ~/models/act_velocity_v5/best/* docker/aic_model/model_weights/
+COPY docker/aic_model/model_weights /ws_aic/model_weights/
+
+ENV MODEL_PATH=/ws_aic/model_weights
+ENV HF_HUB_OFFLINE=1
+
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["--ros-args", "-p", "policy:=aic_example_policies.ros.CheatCode"]
+CMD ["--ros-args", "-p", "policy:=aic_example_policies.ros.RunACTLocal"]
