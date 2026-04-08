@@ -13,16 +13,11 @@ COPY pixi.toml pixi.lock /ws_aic/src/aic/
 COPY pixi_env_setup.sh /ws_aic/src/aic/
 
 # Add other dependencies
+# Add fine-tuned model weights (copy before build)
+COPY docker/aic_model/model_weights /ws_aic/model_weights/
 
 SHELL ["/bin/bash", "-c"]
-
-# Remove lerobot_robot_aic from pixi.toml to avoid Docker dep conflicts
-RUN cd /ws_aic/src/aic && \
-    sed -i '/ros-kilted-lerobot-robot-aic/d' pixi.toml && \
-    sed -i '/ros-kilted-aic-teleoperation/d' pixi.toml
-
-RUN --mount=type=cache,target=/root/.cache/rattler/cache --mount=type=cache,target=/ws_aic/src/aic/.pixi/build \
-    cd /ws_aic/src/aic && pixi install
+RUN cd /ws_aic/src/aic && pixi install
 
 WORKDIR /ws_aic/src/aic
 COPY --chmod=755 <<"EOF" /entrypoint.sh
@@ -62,14 +57,8 @@ echo "ZENOH_CONFIG_OVERRIDE=$ZENOH_CONFIG_OVERRIDE"
 exec pixi run --as-is ros2 run aic_model aic_model "$@"
 EOF
 
-# Add fine-tuned model weights (copy from GPU local path)
-# The model_weights/ directory must be created before Docker build:
-#   mkdir -p docker/aic_model/model_weights
-#   cp ~/models/act_velocity_v5/best/* docker/aic_model/model_weights/
-COPY docker/aic_model/model_weights /ws_aic/model_weights/
-
 ENV MODEL_PATH=/ws_aic/model_weights
 ENV HF_HUB_OFFLINE=1
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["--ros-args", "-p", "policy:=aic_example_policies.ros.RunACTLocal"]
+CMD ["--ros-args", "-p", "policy:=aic_example_policies.ros.RunACTLocal", "-p", "use_sim_time:=true"]
