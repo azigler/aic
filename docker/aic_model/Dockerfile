@@ -15,8 +15,14 @@ COPY pixi_env_setup.sh /ws_aic/src/aic/
 # Add other dependencies
 
 SHELL ["/bin/bash", "-c"]
+
+# Remove lerobot_robot_aic from pixi.toml to avoid Docker dep conflicts
+RUN cd /ws_aic/src/aic && \
+    sed -i '/ros-kilted-lerobot-robot-aic/d' pixi.toml && \
+    sed -i '/ros-kilted-aic-teleoperation/d' pixi.toml
+
 RUN --mount=type=cache,target=/root/.cache/rattler/cache --mount=type=cache,target=/ws_aic/src/aic/.pixi/build \
-    cd /ws_aic/src/aic && pixi install --locked
+    cd /ws_aic/src/aic && pixi install
 
 WORKDIR /ws_aic/src/aic
 COPY --chmod=755 <<"EOF" /entrypoint.sh
