@@ -72,7 +72,17 @@ instead of our custom SimpleACT. This is the fundamental reset for Session 3.
 - Config randomization creates high variance
 - v5 remains best model
 
-### Current best: v5 at 139-168/300 (median ~152)
-- 66 episodes, 100 epochs, lr=5e-6
-- Achieves partial insertion on SFP, proximity on SC
-- Path to full insertion needs better insertion dynamics
+### exp-060: v12 gentle insertion weight (2x) — 88/300 (worse)
+### exp-061: low-friction data (45 eps) — 60/300 (worse)
+- High-friction trained model works BETTER with low-friction eval
+
+### Upstream sync (PR #454, #462, #466, #467)
+- Lower cable friction 1.0→0.1 — helps insertion significantly
+- v5 with upstream: SC trial achieves partial insertion at 1cm!
+- v5 scores 110-170 range with upstream fixes (config-dependent)
+
+### Current best: v5 at 110-170/300 (median ~140, with upstream fixes)
+- 66 episodes (high-friction data), 100 epochs, lr=5e-6
+- Achieves partial insertion on SFP AND SC trials
+- SC trial reached 1cm from full insertion with lower cable friction
+- High-friction training + low-friction eval = happy accident
