@@ -81,8 +81,14 @@ instead of our custom SimpleACT. This is the fundamental reset for Session 3.
 - v5 with upstream: SC trial achieves partial insertion at 1cm!
 - v5 scores 110-170 range with upstream fixes (config-dependent)
 
+### exp-062: combined data (111 eps = 66 high + 45 low friction) — 50/300 (worse)
+- Mixing friction levels confused the model
+
+### Docker submission verified: 124.2/300
+
 ### Current best: v5 at 110-170/300 (median ~140, with upstream fixes)
-- 66 episodes (high-friction data), 100 epochs, lr=5e-6
+- 66 episodes (high-friction data), 100 epochs, batch=8, lr=5e-6
 - Achieves partial insertion on SFP AND SC trials
 - SC trial reached 1cm from full insertion with lower cable friction
-- High-friction training + low-friction eval = happy accident
+- Docker submission working and verified
+- Models preserved at /home/ubuntu/aic_models/act_velocity_v5/
