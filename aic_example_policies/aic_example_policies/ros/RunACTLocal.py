@@ -86,7 +86,22 @@ class RunACTLocal(Policy):
         stats = load_file(stats_path)
 
         def get_stat(key, shape):
-            return stats[key].to(self.device).view(*shape)
+            if key not in stats:
+                raise KeyError(
+                    f"Missing normalization stat '{key}'. "
+                    f"Available: {sorted(stats.keys())}"
+                )
+            t = stats[key].to(self.device)
+            expected = 1
+            for d in shape:
+                if d != -1:
+                    expected *= d
+            if -1 not in shape and t.numel() != expected:
+                raise ValueError(
+                    f"Stat '{key}' has {t.numel()} elements, "
+                    f"cannot reshape to {shape}"
+                )
+            return t.reshape(*shape).contiguous()
 
         self.img_stats = {
             "left": {
