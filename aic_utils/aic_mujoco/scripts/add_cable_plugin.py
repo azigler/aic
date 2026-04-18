@@ -22,12 +22,14 @@ Uses pure mjSpec API for all model manipulation including reparenting.
 """
 
 import argparse
+import contextlib
 import os
 import re
 import sys
 import traceback
-import numpy as np
+
 import mujoco
+import numpy as np
 
 
 # --- Robot XML Post-Processing ---
@@ -119,7 +121,9 @@ def postprocess_robot_xml(xml_str):
 
     # 7. Remove the right finger motor actuator line
     xml_str = re.sub(
-        r'\n\s*<general name="gripper/right_finger_joint_motor"[^>]*/>', "", xml_str
+        r'\n\s*<general name="gripper/right_finger_joint_motor"[^>]*/>',
+        "",
+        xml_str,
     )
 
     # 8. Add armature and light damping to arm joints.
@@ -138,7 +142,7 @@ def postprocess_robot_xml(xml_str):
     for joint_name in arm_joints:
         xml_str = re.sub(
             rf'(<joint name="{joint_name}"[^/]*?)(/\s*>)',
-            rf'\1 damping="1.0" armature="0.1"\2',
+            r'\1 damping="1.0" armature="0.1"\2',
             xml_str,
         )
 
@@ -159,20 +163,31 @@ def postprocess_robot_xml(xml_str):
         ' site="AtiForceTorqueSensor"/>\n'
         "  </sensor>\n"
     )
-    xml_str = xml_str.replace("</mujoco>", equality_and_sensor + "\n  </mujoco>")
+    xml_str = xml_str.replace(
+        "</mujoco>", equality_and_sensor + "\n  </mujoco>"
+    )
 
     return xml_str
 
 
 # --- World XML Post-Processing ---
-def postprocess_world_xml(xml_str):
+def postprocess_world_xml(
+    xml_str,
+    gripper_plug_name="lc_plug_link",
+    weld_relpose=None,
+    cable_end_pos=None,
+    cable_end_quat=None,
+):
     """Apply automated corrections to world XML (replaces manual edits)."""
 
     # 1. Update cable_end_0 pose to tuned values
+    if cable_end_pos is None:
+        cable_end_pos = "0.171400 0.020606 1.511889"
+    if cable_end_quat is None:
+        cable_end_quat = "0.712741 0.312130 -0.052173 0.625982"
     xml_str = re.sub(
         r'(<body name="cable_end_0" childclass="cable_default") pos="[^"]*" quat="[^"]*"',
-        r'\1 pos="0.171400 0.020606 1.511889"'
-        r' quat="0.712741 0.312130 -0.052173 0.625982"',
+        rf'\1 pos="{cable_end_pos}" quat="{cable_end_quat}"',
         xml_str,
     )
 
@@ -184,8 +199,15 @@ def postprocess_world_xml(xml_str):
         xml_str,
     )
 
-    # 3. Fix cable_connection_1 (SC plug end) diaginertia to 4e-4
-    #    cable_connection_1 has mass=0.01 and is the SC plug connector
+    # 3. Replace all cable body diaginertia to 1e-6
+    #    Normal cable raw export uses 0.01; reversed cable uses 0.001
+    for old_diag in ("0.01 0.01 0.01", "0.001 0.001 0.001"):
+        xml_str = xml_str.replace(
+            f'diaginertia="{old_diag}"', 'diaginertia="1e-6 1e-6 1e-6"'
+        )
+
+    # 4. Fix cable_connection_1 plug-end diaginertia to 4e-4
+    #    cable_connection_1 has mass=0.01 and holds SC plug end (normal) or LC plug end (reversed)
     xml_str = re.sub(
         r'(<body name="cable_connection_1"[^>]*>\s*'
         r'<inertial pos="0 0 0" mass="0.01") diaginertia="0.01 0.01 0.01"',
@@ -200,13 +222,16 @@ def postprocess_world_xml(xml_str):
         xml_str,
     )
 
-    # 5. Add equality weld constraint for lc_plug attachment
+    # 6. Add equality weld constraint for gripper-end plug attachment
+    if weld_relpose is None:
+        weld_relpose = (
+            "-0.000711 0.001759 0.168213 0.577301 0.816105 -0.021418 -0.015395"
+        )
     weld_section = (
         "\n"
         "  <equality>\n"
-        '    <weld body1="ati/tool_link" body2="lc_plug_link"'
-        ' relpose="-0.000711 0.001759 0.168213'
-        ' 0.577301 0.816105 -0.021418 -0.015395"'
+        f'    <weld body1="ati/tool_link" body2="{gripper_plug_name}"'
+        f' relpose="{weld_relpose}"'
         ' solref="0.002 1" solimp="0.99 0.999 0.001"/>\n'
         "  </equality>\n"
     )
@@ -235,12 +260,18 @@ def main():
     parser = argparse.ArgumentParser(
         description="Split aic_world.xml into robot and world with plugin."
     )
-    parser.add_argument("--input", default="aic_world.xml", help="Input XML file")
+    parser.add_argument(
+        "--input", default="aic_world.xml", help="Input XML file"
+    )
     parser.add_argument(
         "--output", default="aic_world_final.xml", help="Output World XML file"
     )
-    parser.add_argument("--robot_output", default=None, help="Output Robot XML file")
-    parser.add_argument("--scene_output", default=None, help="Output Scene XML file")
+    parser.add_argument(
+        "--robot_output", default=None, help="Output Robot XML file"
+    )
+    parser.add_argument(
+        "--scene_output", default=None, help="Output Scene XML file"
+    )
     args = parser.parse_args()
 
     try:
@@ -302,10 +333,7 @@ def main():
             for ek in env_keywords:
                 if ek in name:
                     return False
-            for rk in robot_keywords:
-                if rk in name:
-                    return True
-            return False
+            return any(rk in name for rk in robot_keywords)
 
         # --- String helpers for class renaming ---
         def rename_class(xml_str, old_name, new_name):
@@ -423,13 +451,42 @@ def main():
         orig_data = mujoco.MjData(orig_model)
         mujoco.mj_kinematics(orig_model, orig_data)
 
+        # Detect cable type by checking which plug is at cable_connection_0
+        id_conn0 = mujoco.mj_name2id(
+            orig_model, mujoco.mjtObj.mjOBJ_BODY, "cable_connection_0"
+        )  # pytype: disable=wrong-arg-types
+        id_sc_plug = mujoco.mj_name2id(
+            orig_model, mujoco.mjtObj.mjOBJ_BODY, "sc_plug_link"
+        )  # pytype: disable=wrong-arg-types
+
+        is_reversed = (
+            id_sc_plug != -1
+            and id_conn0 != -1
+            and orig_model.body_parentid[id_sc_plug] == id_conn0
+        )
+
+        if is_reversed:
+            gripper_plug_name = "sc_plug_link"
+            # Tuned values for reversed cable (sc_plug at gripper end)
+            cable_end_pos = "0.172124 0.029369 1.507828"
+            cable_end_quat = "0.713143 0.312161 -0.049352 0.625737"
+            weld_relpose = (
+                "-0.000980 0.000693 0.180020"
+                " 0.170140 -0.684594 0.157796 -0.691002"
+            )
+            print("Detected reversed cable (sc_plug at cable_connection_0).")
+        else:
+            gripper_plug_name = "lc_plug_link"
+            weld_relpose = None  # Use default hardcoded value
+            cable_end_pos = None  # Use default hardcoded value
+            cable_end_quat = None
+            print("Detected normal cable orientation.")
+
         # Get body IDs for relative pose calculation
         id_l1 = mujoco.mj_name2id(
             orig_model, mujoco.mjtObj.mjOBJ_BODY, "link_1"
         )  # pytype: disable=wrong-arg-types
-        id_c0 = mujoco.mj_name2id(
-            orig_model, mujoco.mjtObj.mjOBJ_BODY, "cable_connection_0"
-        )  # pytype: disable=wrong-arg-types
+        id_c0 = id_conn0
 
         # Compute relative pose of link_1 w.r.t. cable_connection_0
         rel_pos = None
@@ -449,7 +506,9 @@ def main():
 
             rel_quat = np.zeros(4)
             mujoco.mju_mulQuat(rel_quat, quat_c0_inv, quat_l1)
-            print(f"Computed link_1 relative pose: pos={rel_pos}, quat={rel_quat}")
+            print(
+                f"Computed link_1 relative pose: pos={rel_pos}, quat={rel_quat}"
+            )
 
         # Load source spec
         source_spec = mujoco.MjSpec.from_file(input_path)
@@ -546,7 +605,9 @@ def main():
                             f"  Adding deferred body {defer_name} under {src_body.name}"
                         )
                         # Copy with modified pose
-                        copy_deferred_body(defer_body, new_body, defer_pos, defer_quat)
+                        copy_deferred_body(
+                            defer_body, new_body, defer_pos, defer_quat
+                        )
 
             return new_body
 
@@ -564,7 +625,9 @@ def main():
             """Copy a body with overridden pose and all its children."""
             new_body = dest_parent.add_body()
             new_body.name = src_body.name
-            new_body.pos = list(new_pos) if new_pos is not None else list(src_body.pos)
+            new_body.pos = (
+                list(new_pos) if new_pos is not None else list(src_body.pos)
+            )
             new_body.quat = (
                 list(new_quat) if new_quat is not None else list(src_body.quat)
             )
@@ -669,7 +732,7 @@ def main():
                 pos_vals = [float(x) for x in pos_str.split()]
                 pos_vals[2] += 0.05
                 cable_end.set("pos", " ".join(f"{x:.15g}" for x in pos_vals))
-                print(f"Lifted cable_end_0 by 5cm")
+                print("Lifted cable_end_0 by 5cm")
 
             # Update link_1 pose and move it under conn_0
             if rel_pos is not None and rel_quat is not None:
@@ -701,22 +764,20 @@ def main():
                 sc_port_link_name = candidate
                 break
 
-        if sc_port_link_name:
-            world_spec.add_exclude(
-                bodyname1=sc_port_link_name, bodyname2="sc_plug_link"
-            )
-            print(f"Added exclusion: {sc_port_link_name} <-> sc_plug_link")
-        else:
-            print("Warning: Could not find sc_port link for exclusion.")
+            if sc_port_link_name:
+                world_spec.add_exclude(
+                    bodyname1=sc_port_link_name, bodyname2="sc_plug_link"
+                )
+                print(f"Added exclusion: {sc_port_link_name} <-> sc_plug_link")
+            else:
+                print("Warning: Could not find sc_port link for exclusion.")
         world_spec.add_exclude(bodyname1="cable_end_0", bodyname2="link_1")
         print("Added exclusion: cable_end_0 <-> link_1")
 
         # Activate plugin
         print("Activating cable plugin...")
-        try:
+        with contextlib.suppress(ValueError):
             world_spec.activate_plugin("mujoco.elasticity.cable")
-        except ValueError:
-            pass  # Already activated
 
         print("Adding plugin instance...")
         plugin = world_spec.add_plugin(
@@ -734,11 +795,15 @@ def main():
         print("Added 'cable_default' with joint damping 0.2.")
 
         # Add friction defaults for task board components (matching Gazebo SDF)
-        sc_port_default = world_spec.add_default("sc_port_default", root_default)
+        sc_port_default = world_spec.add_default(
+            "sc_port_default", root_default
+        )
         sc_port_default.geom.friction = [0.5, 0.5, 0.0001]
         print("Added 'sc_port_default' with friction [0.5, 0.5, 0.0001].")
 
-        nic_card_default = world_spec.add_default("nic_card_default", root_default)
+        nic_card_default = world_spec.add_default(
+            "nic_card_default", root_default
+        )
         nic_card_default.geom.friction = [0.1, 0.005, 0.1]
         print("Added 'nic_card_default' with friction [0.1, 0.005, 0.1].")
 
@@ -748,14 +813,15 @@ def main():
         def traverse_find_links(body, target_plugin):
             count = 0
 
-            if body.name == "lc_plug_link":
+            # Skip plug links — they are rigid attachments, not part of the
+            # elastic cable chain.  Including them would create a branch and
+            # violate the cable plugin's single-chain requirement
+            if body.name in ("lc_plug_link", "sc_plug_link"):
                 return 0
 
-            is_cable_body = (
-                body.name.startswith("cable_end_")
-                or body.name.startswith("cable_connection_")
-                or body.name == "sc_plug_link"
-            )
+            is_cable_body = body.name.startswith(
+                "cable_end_"
+            ) or body.name.startswith("cable_connection_")
             if body.name.startswith("link_"):
                 try:
                     idx = int(body.name.split("_")[1])
@@ -803,7 +869,13 @@ def main():
 
         # Apply automated post-processing (replaces manual edits)
         print("Post-processing world XML...")
-        xml_str = postprocess_world_xml(xml_str)
+        xml_str = postprocess_world_xml(
+            xml_str,
+            gripper_plug_name,
+            weld_relpose,
+            cable_end_pos,
+            cable_end_quat,
+        )
 
         print(f"Saving world XML to {output_path}...")
         with open(output_path, "w") as f:

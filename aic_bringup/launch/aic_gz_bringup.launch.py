@@ -32,7 +32,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     Command,
     FindExecutable,
-    IfElseSubstitution,
     LaunchConfiguration,
     PathJoinSubstitution,
     PythonExpression,
@@ -93,8 +92,17 @@ def launch_setup(context, *args, **kwargs):
     cable_type = LaunchConfiguration("cable_type")
     ground_truth = LaunchConfiguration("ground_truth")
     start_aic_engine = LaunchConfiguration("start_aic_engine")
-    shutdown_on_aic_engine_exit = LaunchConfiguration("shutdown_on_aic_engine_exit")
+    shutdown_on_aic_engine_exit = LaunchConfiguration(
+        "shutdown_on_aic_engine_exit"
+    )
     aic_engine_config_file = LaunchConfiguration("aic_engine_config_file")
+    model_discovery_timeout_seconds = LaunchConfiguration(
+        "model_discovery_timeout_seconds"
+    )
+    model_configure_timeout_seconds = LaunchConfiguration(
+        "model_configure_timeout_seconds"
+    )
+    gz_verbosity_level = LaunchConfiguration("gz_verbosity_level")
 
     gripper_initial_pos = "0.00655"
     cable_type_str = LaunchConfiguration("cable_type").perform(context)
@@ -151,7 +159,9 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
     robot_description = {
-        "robot_description": ParameterValue(robot_description_content, value_type=str)
+        "robot_description": ParameterValue(
+            robot_description_content, value_type=str
+        )
     }
 
     robot_state_publisher_node = Node(
@@ -238,7 +248,12 @@ def launch_setup(context, *args, **kwargs):
         executable="aic_engine",
         output="screen",
         parameters=[
-            {"config_file_path": aic_engine_config_file, "use_sim_time": True},
+            {
+                "config_file_path": aic_engine_config_file,
+                "use_sim_time": True,
+                "model_discovery_timeout_seconds": model_discovery_timeout_seconds,
+                "model_configure_timeout_seconds": model_configure_timeout_seconds,
+            },
         ],
         condition=IfCondition(start_aic_engine),
     )
@@ -261,7 +276,9 @@ def launch_setup(context, *args, **kwargs):
 
     # Task board spawning (conditional)
     spawn_task_board = LaunchConfiguration("spawn_task_board")
-    task_board_description_file = LaunchConfiguration("task_board_description_file")
+    task_board_description_file = LaunchConfiguration(
+        "task_board_description_file"
+    )
 
     spawn_task_board_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -335,11 +352,14 @@ def launch_setup(context, *args, **kwargs):
         container_name="ros_gz_container",
         create_own_container="True",
         use_composition="True",
+        verbosity_level=gz_verbosity_level,
     )
 
     gzgui = ExecuteProcess(
         cmd=["gz", "sim", "-g"],
-        condition=IfCondition(PythonExpression(["'", gazebo_gui, "' == 'true'"])),
+        condition=IfCondition(
+            PythonExpression(["'", gazebo_gui, "' == 'true'"])
+        ),
         output="screen",
     )
 
@@ -487,7 +507,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "controllers_file",
             default_value=PathJoinSubstitution(
-                [FindPackageShare("aic_bringup"), "config", "aic_ros2_controllers.yaml"]
+                [
+                    FindPackageShare("aic_bringup"),
+                    "config",
+                    "aic_ros2_controllers.yaml",
+                ]
             ),
             description="Absolute path to YAML file with the controllers configuration.",
         )
@@ -519,7 +543,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "description_file",
             default_value=PathJoinSubstitution(
-                [FindPackageShare("aic_description"), "urdf", "ur_gz.urdf.xacro"]
+                [
+                    FindPackageShare("aic_description"),
+                    "urdf",
+                    "ur_gz.urdf.xacro",
+                ]
             ),
             description="URDF/XACRO description file (absolute path) with the robot.",
         )
@@ -549,7 +577,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "task_board_description_file",
             default_value=PathJoinSubstitution(
-                [FindPackageShare("aic_description"), "urdf", "task_board.urdf.xacro"]
+                [
+                    FindPackageShare("aic_description"),
+                    "urdf",
+                    "task_board.urdf.xacro",
+                ]
             ),
             description="URDF/XACRO description file (absolute path) with the task board.",
         )
@@ -558,14 +590,20 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "ros_gz_bridge_config_file",
             default_value=PathJoinSubstitution(
-                [FindPackageShare("aic_bringup"), "config", "ros_gz_bridge_config.yaml"]
+                [
+                    FindPackageShare("aic_bringup"),
+                    "config",
+                    "ros_gz_bridge_config.yaml",
+                ]
             ),
             description="ros_gz bridge config file (absolute path) to use.",
         )
     )
     declared_arguments.append(
         DeclareLaunchArgument(
-            "gazebo_gui", default_value="true", description="Start gazebo with GUI?"
+            "gazebo_gui",
+            default_value="true",
+            description="Start gazebo with GUI?",
         )
     )
     declared_arguments.append(
@@ -579,7 +617,9 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
-            "robot_x", default_value="-0.2", description="Robot spawn X position"
+            "robot_x",
+            default_value="-0.2",
+            description="Robot spawn X position",
         )
     )
     declared_arguments.append(
@@ -589,7 +629,9 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
-            "robot_z", default_value="1.14", description="Robot spawn Z position"
+            "robot_z",
+            default_value="1.14",
+            description="Robot spawn Z position",
         )
     )
     declared_arguments.append(
@@ -760,7 +802,28 @@ def generate_launch_description():
             description="Absolute path to YAML file with the AIC engine configuration.",
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "model_configure_timeout_seconds",
+            default_value="60",
+            description="Timeout for model configuration checks.",
+        )
+    )
 
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "model_discovery_timeout_seconds",
+            default_value="30",
+            description="Timeout for discovering the participant model.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "gz_verbosity_level",
+            default_value="4",
+            description="Verbosity level of the Gazebo server (0=critical, 4=debug).",
+        )
+    )
     return LaunchDescription(
-        declared_arguments + [OpaqueFunction(function=launch_setup)]
+        [*declared_arguments, OpaqueFunction(function=launch_setup)]
     )
