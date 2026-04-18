@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """General-purpose xacro expansion service for AIC training workflows."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
+import rclpy
+from aic_training_interfaces.srv import ExpandXacro
 from ament_index_python.packages import (
     PackageNotFoundError,
     get_package_share_directory,
 )
-from aic_training_interfaces.srv import ExpandXacro
-import rclpy
 from rclpy.node import Node
 
 
