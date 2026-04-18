@@ -11,60 +11,76 @@ argument-hint: "[collect|train|convert]"
 The competition provides RunACT.py which uses LeRobot's ACTPolicy. Fine-tune
 this model on our demonstration data. Do NOT build custom model architectures.
 
+## Pre-flight checklist (BEFORE any training run)
+
+1. **Run `/audit-train`** to verify the training script is sane (val split
+   present, stats saved with correct shape, seed fixed, etc.)
+2. **Confirm data distribution** — never mix Docker-collected + pixi-collected
+   episodes, never mix high-friction + low-friction datasets. Our best
+   baseline (v5) is 66 episodes of high-friction pixi-collected velocity data.
+3. **GPU headroom** — `nvidia-smi`. Training a 100-epoch v5-class model on
+   66 eps uses ~18GB peak; leave other workloads space.
+4. **Scoped output** — write all artifacts under `~/aic-work/models/<name>/`
+   so we don't pollute home dirs shared with other agents.
+
+## Winning recipe (v5 baseline to beat)
+
+- 66 episodes, high-friction pixi-collected, velocity mode
+- 100 epochs max, lr=5e-6, batch=8, weight_decay=1e-4, grad_clip=10.0
+- chunk_size=100 (from ACTConfig), n_action_steps default
+- insertion_weight=1.0 (NO reweighting — exp-047/059/060 proved any value > 1
+  regresses)
+- 80/20 train/val split by episode, early stopping patience=10 on val_loss
+
+Score range: 110-170/300, median ~140, Docker-verified 124.2/300.
+
+## Training command (post-scripts/train_act.py rewrite)
+
+```bash
+ssh gpu "cd ~/aic-work/src && \
+  nohup pixi run python scripts/train_act.py \
+    --data-dir ~/aic-work/data/velocity \
+    --output-dir ~/aic-work/models/act_velocity_v13 \
+    --epochs 100 --batch-size 8 --lr 5e-6 \
+    --val-frac 0.2 --patience 10 --seed 42 \
+    > ~/aic-work/logs/train_v13.log 2>&1 &"
+```
+
 ## Step 1: Collect Demonstrations
 
-Use DataCollector (wraps CheatCode) to record expert demos:
+Use DataCollector (wraps CheatCode) to record expert demos via distrobox:
+
 ```bash
-# Via distrobox on GPU (ground_truth=true required for CheatCode)
-ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/ws_aic/src/aic && \
+ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/aic-work/src && \
+  OUT_DIR=~/aic-work/data/velocity_new \
   POLICY=aic_example_policies.ros.DataCollector \
-  GROUND_TRUTH=true ~/run-eval.sh"
+  GROUND_TRUTH=true ~/aic-work/bin/run-eval.sh"
 ```
 
-Data saved to `~/training_data/` on GPU. 3 episodes per eval run (3 trials).
+3 episodes per run (3 trials). Budget: ~2 minutes per run.
 
-## Step 2: Convert to LeRobot Format
+## Step 2: (Historical) Convert to LeRobot Format
 
-TODO: Create conversion script from our numpy episode format to LeRobot
-HDF5 dataset format. LeRobot expects:
-```
-dataset/
-├── episode_0/
-│   ├── observation.images.left_camera  # (T, C, H, W)
-│   ├── observation.state               # (T, 26)
-│   └── action                          # (T, 7)
-└── meta/
-    └── stats.json
-```
+scripts/convert_to_lerobot.py exists but we don't use LeRobot's HDF5 format —
+train_act.py loads our numpy format directly. Kept for reference.
 
 ## Step 3: Fine-tune ACTPolicy
 
-```bash
-# Use LeRobot's training script
-ssh gpu "nohup pixi run python -m lerobot.scripts.train \
-  --dataset.path=~/training_data_lerobot \
-  --policy=act \
-  --output_dir=~/models/act_finetuned \
-  > /tmp/train.log 2>&1 &"
-```
+Use the command above. Training time: ~4 hours for 100 epochs on L4, may early-stop sooner.
 
 ## Step 4: Evaluate
 
 ```bash
-# Point RunACT to fine-tuned weights instead of HuggingFace
-# (requires modifying RunACT.py to load local weights)
+MODEL_PATH=~/aic-work/models/act_velocity_v13/best /eval
 ```
 
-## Existing Training Data on GPU
-
-- `~/training_data_pos/`: 39 episodes from 13 configs (position-mode, numpy format)
-  - These were collected via pixi+distrobox (good distribution)
-  - Need conversion to LeRobot format
-- `~/training_data_new/`: 68 episodes from Docker collection (BAD -- don't use)
+Always 3-seed (see /eval). If mean improves ≥5 points over v5, promote.
 
 ## Rules
 
 - **ALWAYS nohup** for training >10 min
 - **ONE variable at a time** when tuning hyperparameters
-- **Check val_loss BUT also eval score** -- they don't always correlate
-- **50 epochs** was the sweet spot for 24 demos with the old approach. May differ with LeRobot.
+- **Check val_loss AND eval score** — they correlate loosely. v6 (200 epochs)
+  had best val loss but worst eval score.
+- **Never retrain with insertion_weight > 1.0** without an explicit ablation bead
+- **Never overwrite** an existing model directory. Always new name.
