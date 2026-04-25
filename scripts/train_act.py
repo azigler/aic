@@ -3,8 +3,8 @@
 
 Usage:
     pixi run python scripts/train_act.py \
-        --data-dir ~/aic-work/data/velocity \
-        --output-dir ~/aic-work/models/act_finetuned \
+        --data-dir ~/aic/data/velocity \
+        --output-dir ~/aic/models/act_finetuned \
         --epochs 100 --batch-size 8 --lr 5e-6 \
         --val-frac 0.2 --patience 10
 

@@ -7,9 +7,13 @@ near the insertion point where the robot is still moving but slowly.
 
 Usage:
     pixi run python scripts/train_act_v2.py \
-        --data-dir ~/training_data_velocity \
-        --output-dir ~/models/act_velocity_v3 \
+        --data-dir ~/aic/data/velocity \
+        --output-dir ~/aic/models/act_velocity_v3 \
         --epochs 50 --batch-size 8 --lr 1e-5
+
+NOTE: v2 (position-difference actions) was empirically worse than v1
+(observed velocity). Kept for reference only — see exp-057 for the
+3/300 score that proved this approach generates 10x too-large velocities.
 """
 
 import argparse

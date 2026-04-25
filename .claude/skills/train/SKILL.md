@@ -20,8 +20,8 @@ this model on our demonstration data. Do NOT build custom model architectures.
    baseline (v5) is 66 episodes of high-friction pixi-collected velocity data.
 3. **GPU headroom** — `nvidia-smi`. Training a 100-epoch v5-class model on
    66 eps uses ~18GB peak; leave other workloads space.
-4. **Scoped output** — write all artifacts under `~/aic-work/models/<name>/`
-   so we don't pollute home dirs shared with other agents.
+4. **Scoped output** — write all artifacts under `~/aic/models/<name>/`
+   (gitignored, persists across rsyncs because rsync excludes models/).
 
 ## Winning recipe (v5 baseline to beat)
 
@@ -37,13 +37,13 @@ Score range: 110-170/300, median ~140, Docker-verified 124.2/300.
 ## Training command (post-scripts/train_act.py rewrite)
 
 ```bash
-ssh gpu "cd ~/aic-work/src && \
+ssh gpu "cd ~/aic/src && \
   nohup pixi run python scripts/train_act.py \
-    --data-dir ~/aic-work/data/velocity \
-    --output-dir ~/aic-work/models/act_velocity_v13 \
+    --data-dir ~/aic/data/velocity \
+    --output-dir ~/aic/models/act_velocity_v13 \
     --epochs 100 --batch-size 8 --lr 5e-6 \
     --val-frac 0.2 --patience 10 --seed 42 \
-    > ~/aic-work/logs/train_v13.log 2>&1 &"
+    > ~/aic/logs/train_v13.log 2>&1 &"
 ```
 
 ## Step 1: Collect Demonstrations
@@ -51,10 +51,10 @@ ssh gpu "cd ~/aic-work/src && \
 Use DataCollector (wraps CheatCode) to record expert demos via distrobox:
 
 ```bash
-ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/aic-work/src && \
-  OUT_DIR=~/aic-work/data/velocity_new \
+ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/aic/src && \
+  TRAINING_DATA_DIR=~/aic/data/velocity_new \
   POLICY=aic_example_policies.ros.DataCollector \
-  GROUND_TRUTH=true ~/aic-work/bin/run-eval.sh"
+  GROUND_TRUTH=true ~/aic/bin/run-eval.sh"
 ```
 
 3 episodes per run (3 trials). Budget: ~2 minutes per run.
@@ -71,7 +71,7 @@ Use the command above. Training time: ~4 hours for 100 epochs on L4, may early-s
 ## Step 4: Evaluate
 
 ```bash
-MODEL_PATH=~/aic-work/models/act_velocity_v13/best /eval
+MODEL_PATH=~/aic/models/act_velocity_v13/best /eval
 ```
 
 Always 3-seed (see /eval). If mean improves ≥5 points over v5, promote.

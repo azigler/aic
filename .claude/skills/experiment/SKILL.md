@@ -14,7 +14,8 @@ argument-hint: "[propose|run|log|next]"
    66 episodes, 100 epochs, lr=5e-6, batch=8, insertion_weight=1.0,
    velocity-mode data, high-friction, 30s trial time limit.
 3. **GPU status** — if suspended, note the ~$1/hr cost of resuming and confirm
-   with user before starting long runs. Workspace lives under `~/aic-work/`.
+   with user before starting long runs. Workspace lives under `~/aic/`
+   (data, models, results all under that root on both local and GPU).
 4. **No mixing data distributions** — never combine Docker-collected with
    pixi-collected, never combine high-friction with low-friction.
 
@@ -38,9 +39,9 @@ br update <id> --status=in_progress
 ## Running an experiment:
 
 1. Make the code change locally (one variable!)
-2. Rsync to GPU under `~/aic-work/src/`
+2. Rsync to GPU under `~/aic/src/`
 3. Run /eval — ALWAYS 3 seeds for variance
-4. Parse `~/aic-work/results/scoring.yaml` for mean + range
+4. Parse `~/aic/results/scoring.yaml` for mean + range
 5. Log immediately to the bead and experiment-log.md
 
 ## AFTER every experiment:

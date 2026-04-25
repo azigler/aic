@@ -3,14 +3,14 @@
 
 Usage:
     pixi run python scripts/convert_to_lerobot.py \
-        --input ~/training_data_velocity \
-        --output ~/training_data_lerobot \
+        --input ~/aic/data/velocity \
+        --output ~/aic/data/velocity_lerobot \
         --repo-id local/aic_velocity_demos
 
 The output dataset can be used directly with lerobot-train:
     pixi run lerobot-train \
         --dataset.repo_id=local/aic_velocity_demos \
-        --dataset.root=~/training_data_lerobot \
+        --dataset.root=~/aic/data/velocity_lerobot \
         ...
 """
 

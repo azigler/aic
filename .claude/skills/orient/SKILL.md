@@ -24,8 +24,8 @@ Read in order (absorb each before continuing):
 git log --oneline -10                       # recent experiments/commits
 git status --short                          # dirty files
 br list                                     # open beads (P1 = active work)
-ls /home/ubuntu/aic_models/ 2>/dev/null     # local model checkpoints
-ls /home/ubuntu/training_data_*/ -d 2>/dev/null  # local training data
+ls /home/ubuntu/aic/models/ 2>/dev/null     # local model checkpoints
+ls /home/ubuntu/aic/data/ 2>/dev/null       # local training data
 ```
 
 Also check if the last session's JSONL references GPU state (suspended vs

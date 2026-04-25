@@ -44,5 +44,5 @@ optimistic by 2x, future plans should be discounted.
   Mitigation: this is the right answer if true; keep v5 as submission fallback.
 - Adding wrist_wrench to observation requires re-collecting training data
   that includes the wrench field OR backfilling from existing episodes if
-  the raw data has it. Need to check `/aic-work/data/velocity/episode_*/`
+  the raw data has it. Need to check `~/aic/data/velocity/episode_*/`
   contents before committing to Phase 3.

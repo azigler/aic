@@ -44,7 +44,7 @@ class DataCollector(CheatCode):
             "timestamps": [],
         }
         self._save_dir = os.environ.get(
-            "TRAINING_DATA_DIR", os.path.expanduser("~/training_data_velocity")
+            "TRAINING_DATA_DIR", os.path.expanduser("~/aic/data/velocity")
         )
         os.makedirs(self._save_dir, exist_ok=True)
         self._episode_count = self._count_existing_episodes()

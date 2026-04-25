@@ -18,3 +18,19 @@ aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/ai
 
 models/
 aic_results/debug/
+
+# Local + GPU project artifacts (kept under ~/aic/ for scoping; never committed)
+data/
+results/
+logs/
+bin/
+
+# bv (beads viewer) local config and caches
+.bv/
+
+# beads runtime artifacts (locks, WAL, history)
+.beads/.sync.lock
+.beads/.write.lock
+.beads/.br_history/
+.beads/beads.db-wal
+.beads/beads.db-shm

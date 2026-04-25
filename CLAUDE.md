@@ -59,40 +59,61 @@ aic/
 
 ## Development Workflow
 
+### Project layout (LOCAL and GPU mirror this)
+
+All our project files live under `~/aic/`. Sub-dirs `data/`, `models/`,
+`results/`, `logs/`, `bin/` are gitignored — they hold large or per-host
+artifacts. On GPU the same paths apply; the rsync target is `~/aic/src/`
+so the repo doesn't clobber the data dirs that live as siblings.
+
+```
+~/aic/
+├── (git repo files)         # checked-in source
+├── src/                     # GPU only: rsync target for the repo
+├── data/
+│   ├── velocity/            # 126 high-friction velocity-mode episodes (9.2GB)
+│   └── lowfriction/         # 45 low-friction episodes (7.7GB)
+├── models/                  # checkpoints (v5, v12, lowfriction_v1, combined_v1)
+├── results/                 # scoring.yaml output
+├── logs/                    # training/eval stdout
+└── bin/run-eval.sh          # GPU-only helper
+```
+
 ### Iteration Loop (on GPU via SSH)
 
 ```bash
 # 1. Edit code locally, rsync to GPU
 rsync -az --exclude='.git' --exclude='.pixi' --exclude='__pycache__' \
-  /home/ubuntu/aic/ gpu:~/ws_aic/src/aic/
+  --exclude='data' --exclude='models' --exclude='results' --exclude='logs' \
+  /home/ubuntu/aic/ gpu:~/aic/src/
 
 # 2. Reinstall package on GPU
-ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/ws_aic/src/aic && \
+ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/aic/src && \
   pixi reinstall ros-kilted-aic-example-policies 2>&1 | tail -3"
 
 # 3. Run eval via distrobox + pixi
-ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/ws_aic/src/aic && \
-  POLICY=aic_example_policies.ros.RunACT ~/run-eval.sh"
+ssh gpu "export PATH=\$HOME/.pixi/bin:\$PATH && cd ~/aic/src && \
+  MODEL_PATH=~/aic/models/act_velocity_v5/best \
+  POLICY=aic_example_policies.ros.RunACTLocal ~/aic/bin/run-eval.sh"
 
 # 4. Check results
-ssh gpu "cat ~/aic_results/scoring.yaml"
+ssh gpu "cat ~/aic/results/scoring.yaml"
 ```
 
 ### Training Loop
 
 ```bash
-# 1. Collect demos (CheatCode with ground_truth=true)
-# 2. Convert to LeRobot dataset format
-# 3. Fine-tune ACTPolicy using LeRobot training
-# 4. Evaluate fine-tuned model
-# 5. Iterate on hyperparameters
+# 1. Collect demos (CheatCode with ground_truth=true) → ~/aic/data/<name>/
+# 2. Fine-tune via scripts/train_act.py (val split + early stop) → ~/aic/models/<name>/
+# 3. Evaluate fine-tuned model with /eval (3 seeds for variance)
+# 4. Iterate on hyperparameters (one variable at a time)
 ```
 
 ### Submission (Docker compose -- ONLY for final verification)
 
 ```bash
-ssh gpu "cd ~/ws_aic/src/aic && docker compose -f docker/docker-compose.yaml build model"
-ssh gpu "cd ~/ws_aic/src/aic && docker compose -f docker/docker-compose.yaml up"
+ssh gpu "cd ~/aic/src && docker compose -f docker/docker-compose.yaml build model"
+ssh gpu "cd ~/aic/src && docker compose -f docker/docker-compose.yaml up"
 ```
 
 ## GPU Instance (OVH L4-90)
@@ -100,10 +121,9 @@ ssh gpu "cd ~/ws_aic/src/aic && docker compose -f docker/docker-compose.yaml up"
 - NVIDIA L4, 24GB VRAM, 22 CPU cores, 90GB RAM
 - SSH config entry: `gpu`
 - Cost: ~$1/hr -- STOP when not using
-- Training data: `~/training_data_pos/` (39 position-mode episodes from session 1)
-- Models: `~/models/` (various from session 1)
+- All our files scoped under `~/aic/` (see Project layout above)
 - distrobox aic_eval container: created and ready
-- pixi: installed at `~/.pixi/bin/pixi`
+- pixi: installed at `~/.pixi/bin/pixi` (shared, do not move)
 
 ## Key Technical Details
 
