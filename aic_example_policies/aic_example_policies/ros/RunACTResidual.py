@@ -33,11 +33,11 @@
 
 import math
 import os
-import time
 
 from aic_model_interfaces.msg import Observation
 from aic_task_interfaces.msg import Task
 from geometry_msgs.msg import Twist, Vector3
+from rclpy.duration import Duration
 
 from aic_example_policies.ros.RunACTLocal import RunACTLocal
 
@@ -149,16 +149,35 @@ class RunACTResidual(RunACTLocal):
             f"RunACTResidual.insert_cable() enter. Task: {task}"
         )
 
-        start_time = time.time()
-        time_limit = float(os.environ.get("TIME_LIMIT", "30"))
-        last_loop_time = start_time
+        # Sim-clock-aware deadline + pacing. The portal enforces
+        # task.time_limit on the ROS clock (sim time), so we must use
+        # Node.get_clock() rather than time.time(). See bd-spw / upstream
+        # PR #500 / docs/troubleshooting.md.
+        clock = self.get_clock()
+        start_time = clock.now()
+
+        # Prefer task.time_limit (uint64 seconds) when set; fall back to
+        # the legacy TIME_LIMIT env var (default 30s) for local overrides.
+        if task is not None and getattr(task, "time_limit", 0):
+            time_limit = float(task.time_limit)
+        else:
+            time_limit = float(os.environ.get("TIME_LIMIT", "30"))
+        deadline = Duration(seconds=time_limit)
+        period = Duration(seconds=0.25)  # 4 Hz control rate
+
+        # Sim-time floats (seconds since loop start) for the residual
+        # stall detector — the buffer math in _z_speed_estimate is
+        # frame-relative, so any consistent monotonic clock works as long
+        # as it ticks at sim rate (not wall rate).
+        last_loop_sec = 0.0
 
         residual_fired_count = 0
 
-        while time.time() - start_time < time_limit:
-            loop_start = time.time()
-            dt = max(loop_start - last_loop_time, 1e-3)
-            last_loop_time = loop_start
+        while (clock.now() - start_time) < deadline:
+            loop_start = clock.now()
+            now_sec = (loop_start - start_time).nanoseconds * 1e-9
+            dt = max(now_sec - last_loop_sec, 1e-3)
+            last_loop_sec = now_sec
 
             observation_msg = get_observation()
             if observation_msg is None:
@@ -191,10 +210,10 @@ class RunACTResidual(RunACTLocal):
             )
 
             z_now = observation_msg.controller_state.tcp_pose.position.z
-            if self._should_engage_residual(observation_msg, loop_start, z_now):
+            if self._should_engage_residual(observation_msg, now_sec, z_now):
                 residual_fired_count += 1
                 if self._residual_active_since is None:
-                    self._residual_active_since = loop_start
+                    self._residual_active_since = now_sec
                     self.get_logger().info(
                         f"Residual ENGAGED (|F|≥{self.fz_threshold}N, "
                         f"|vz|<{self.stall_vz_threshold}m/s)"
@@ -215,8 +234,12 @@ class RunACTResidual(RunACTLocal):
             move_robot(motion_update=motion_update)
             send_feedback("in progress...")
 
-            elapsed = time.time() - loop_start
-            time.sleep(max(0, 0.25 - elapsed))
+            # Maintain 4 Hz control rate using the ROS clock so we honor
+            # sim time on the portal.
+            elapsed = clock.now() - loop_start
+            remaining_ns = period.nanoseconds - elapsed.nanoseconds
+            if remaining_ns > 0:
+                clock.sleep_for(Duration(nanoseconds=remaining_ns))
 
         self.get_logger().info(
             f"RunACTResidual exiting. Residual fired {residual_fired_count} steps."

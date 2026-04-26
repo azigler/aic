@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,6 +39,7 @@ from aic_model.policy import (
 from aic_model_interfaces.msg import Observation
 from aic_task_interfaces.msg import Task
 from geometry_msgs.msg import Twist, Vector3, Wrench
+from rclpy.duration import Duration
 from rclpy.node import Node
 
 # NOTE: torch, lerobot, safetensors, huggingface_hub are deferred into
@@ -286,11 +286,24 @@ class RunACT(Policy):
         self.policy.reset()
         self.get_logger().info(f"RunACT.insert_cable() enter. Task: {task}")
 
-        start_time = time.time()
+        # Sim-clock-aware deadline + pacing. The portal enforces
+        # task.time_limit on the ROS clock (sim time), so we must use
+        # Node.get_clock() rather than time.time(). See bd-spw / upstream
+        # PR #500 / docs/troubleshooting.md.
+        clock = self.get_clock()
+        start_time = clock.now()
 
-        # Run inference for 30 seconds
-        while time.time() - start_time < 30.0:
-            loop_start = time.time()
+        # Prefer task.time_limit (uint64 seconds) when set; fall back to
+        # the legacy 30s default that this file used historically.
+        if task is not None and getattr(task, "time_limit", 0):
+            time_limit = float(task.time_limit)
+        else:
+            time_limit = 30.0
+        deadline = Duration(seconds=time_limit)
+        period = Duration(seconds=0.25)  # 4 Hz control rate
+
+        while (clock.now() - start_time) < deadline:
+            loop_start = clock.now()
 
             # 1. Get & Process Observation
             observation_msg = get_observation()
@@ -331,8 +344,11 @@ class RunACT(Policy):
             send_feedback("in progress...")
 
             # Maintain control rate (approx 4Hz loop = 0.25s sleep)
-            elapsed = time.time() - loop_start
-            time.sleep(max(0, 0.25 - elapsed))
+            # using the ROS clock so we honor sim time.
+            elapsed = clock.now() - loop_start
+            remaining_ns = period.nanoseconds - elapsed.nanoseconds
+            if remaining_ns > 0:
+                clock.sleep_for(Duration(nanoseconds=remaining_ns))
 
         self.get_logger().info("RunACT.insert_cable() exiting...")
         return True

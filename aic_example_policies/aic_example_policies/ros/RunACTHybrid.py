@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,6 +28,7 @@ from aic_model.policy import (
 from aic_model_interfaces.msg import Observation
 from aic_task_interfaces.msg import Task
 from geometry_msgs.msg import Twist, Vector3, Wrench
+from rclpy.duration import Duration
 from rclpy.node import Node
 
 # NOTE: torch, lerobot, safetensors are deferred into __init__ (which
@@ -233,11 +233,26 @@ class RunACTHybrid(Policy):
             f"RunACTHybrid.insert_cable() enter. Task: {task}"
         )
 
-        start_time = time.time()
+        # Sim-clock-aware deadline + pacing. The portal enforces
+        # task.time_limit on the ROS clock (sim time), so we must use
+        # Node.get_clock() rather than time.time(). See bd-spw / upstream
+        # PR #500 / docs/troubleshooting.md.
+        clock = self.get_clock()
+        start_time = clock.now()
 
-        while time.time() - start_time < self.total_time:
-            loop_start = time.time()
-            elapsed = loop_start - start_time
+        # Prefer task.time_limit (uint64 seconds) when set; fall back to
+        # the env-configurable self.total_time we recorded in __init__.
+        if task is not None and getattr(task, "time_limit", 0):
+            time_limit = float(task.time_limit)
+        else:
+            time_limit = self.total_time
+        deadline = Duration(seconds=time_limit)
+        period = Duration(seconds=0.25)  # 4 Hz control rate
+
+        while (clock.now() - start_time) < deadline:
+            loop_start = clock.now()
+            # Sim-time elapsed in seconds for phase switching.
+            elapsed = (loop_start - start_time).nanoseconds * 1e-9
 
             observation_msg = get_observation()
             if observation_msg is None:
@@ -281,8 +296,12 @@ class RunACTHybrid(Policy):
             move_robot(motion_update=motion_update)
             send_feedback(f"{phase} t={elapsed:.1f}s")
 
-            loop_elapsed = time.time() - loop_start
-            time.sleep(max(0, 0.25 - loop_elapsed))
+            # Maintain 4 Hz control rate using the ROS clock so we honor
+            # sim time on the portal.
+            loop_elapsed = clock.now() - loop_start
+            remaining_ns = period.nanoseconds - loop_elapsed.nanoseconds
+            if remaining_ns > 0:
+                clock.sleep_for(Duration(nanoseconds=remaining_ns))
 
         self.get_logger().info("RunACTHybrid.insert_cable() exiting...")
         return True
