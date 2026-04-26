@@ -28,9 +28,14 @@ bin/
 # bv (beads viewer) local config and caches
 .bv/
 
-# beads runtime artifacts (locks, WAL, history)
+# beads runtime artifacts (locks, WAL, history, local cache db)
+# JSONL (issues.jsonl) is the canonical source of truth — see /beads SKILL.
+# beads.db is a local SQLite cache rebuilt from JSONL on session start.
 .beads/.sync.lock
 .beads/.write.lock
+.beads/.bv.lock
 .beads/.br_history/
+.beads/beads.db
 .beads/beads.db-wal
 .beads/beads.db-shm
+.beads/last-touched
