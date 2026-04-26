@@ -167,9 +167,9 @@ class RunACTResidual(RunACTLocal):
 
             obs_tensors = self.prepare_observations(observation_msg)
 
-            import torch
-
-            with torch.inference_mode():
+            # torch is stashed on self by RunACTLocal.__init__ (deferred
+            # import to keep module discovery fast — see bd-crw).
+            with self._torch.inference_mode():
                 normalized_action = self.policy.select_action(obs_tensors)
 
             raw_action_tensor = (

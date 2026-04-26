@@ -5,15 +5,17 @@
 #  then switches to a constant downward velocity to push through insertion.
 #
 
+from __future__ import annotations
+
 import json
 import os
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import draccus
 import numpy as np
-import torch
 from aic_control_interfaces.msg import (
     MotionUpdate,
     TrajectoryGenerationMode,
@@ -27,15 +29,31 @@ from aic_model.policy import (
 from aic_model_interfaces.msg import Observation
 from aic_task_interfaces.msg import Task
 from geometry_msgs.msg import Twist, Vector3, Wrench
-from lerobot.policies.act.configuration_act import ACTConfig
-from lerobot.policies.act.modeling_act import ACTPolicy
 from rclpy.node import Node
-from safetensors.torch import load_file
+
+# NOTE: torch, lerobot, safetensors are deferred into __init__ (which
+# runs inside on_configure's 60s budget) so module discovery on the portal
+# stays under the 30s model_discovery_timeout. See bd-crw / upstream PR #500.
+if TYPE_CHECKING:
+    pass
 
 
 class RunACTHybrid(Policy):
     def __init__(self, parent_node: Node):
         super().__init__(parent_node)
+
+        # Heavy imports: deferred from module top to keep module-load fast
+        # for portal discovery (30s budget). on_configure has its own 60s
+        # budget which is where __init__ runs.
+        import torch
+        from lerobot.policies.act.configuration_act import ACTConfig
+        from lerobot.policies.act.modeling_act import ACTPolicy
+        from safetensors.torch import load_file
+
+        # Stash for use in methods.
+        self._torch = torch
+        self._load_file = load_file
+
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
@@ -123,8 +141,7 @@ class RunACTHybrid(Policy):
             f"descent_speed={self.descent_speed}, total={self.total_time}s"
         )
 
-    @staticmethod
-    def _img_to_tensor(raw_img, device, scale, mean, std):
+    def _img_to_tensor(self, raw_img, device, scale, mean, std):
         img_np = np.frombuffer(raw_img.data, dtype=np.uint8).reshape(
             raw_img.height, raw_img.width, 3
         )
@@ -133,7 +150,7 @@ class RunACTHybrid(Policy):
                 img_np, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA
             )
         tensor = (
-            torch.from_numpy(img_np)
+            self._torch.from_numpy(img_np)
             .permute(2, 0, 1)
             .float()
             .div(255.0)
@@ -192,7 +209,10 @@ class RunACTHybrid(Policy):
         )
 
         raw_state_tensor = (
-            torch.from_numpy(state_np).float().unsqueeze(0).to(self.device)
+            self._torch.from_numpy(state_np)
+            .float()
+            .unsqueeze(0)
+            .to(self.device)
         )
         obs["observation.state"] = (
             raw_state_tensor - self.state_mean
@@ -226,7 +246,7 @@ class RunACTHybrid(Policy):
             if elapsed < self.approach_time:
                 # Phase 1: ACT model approach
                 obs_tensors = self.prepare_observations(observation_msg)
-                with torch.inference_mode():
+                with self._torch.inference_mode():
                     normalized_action = self.policy.select_action(obs_tensors)
                 raw_action = (
                     normalized_action * self.action_std

@@ -14,21 +14,23 @@
 #  limitations under the License.
 #
 
+from __future__ import annotations
+
+import json
 import os
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
-import time
-import json
-import torch
-import numpy as np
 import cv2
 import draccus
-from pathlib import Path
-from typing import Callable, Dict, Any, List
-from rclpy.node import Node
-from geometry_msgs.msg import Twist, Vector3
-
+import numpy as np
+from aic_control_interfaces.msg import (
+    MotionUpdate,
+    TrajectoryGenerationMode,
+)
 from aic_model.policy import (
     GetObservationCallback,
     MoveRobotCallback,
@@ -37,24 +39,37 @@ from aic_model.policy import (
 )
 from aic_model_interfaces.msg import Observation
 from aic_task_interfaces.msg import Task
+from geometry_msgs.msg import Twist, Vector3, Wrench
+from rclpy.node import Node
 
-from aic_control_interfaces.msg import (
-    MotionUpdate,
-    TrajectoryGenerationMode,
-)
-from geometry_msgs.msg import Wrench
-
-# LeRobot & Safetensors
-from lerobot.policies.act.modeling_act import ACTPolicy
-from lerobot.policies.act.configuration_act import ACTConfig
-from safetensors.torch import load_file
-from huggingface_hub import snapshot_download
+# NOTE: torch, lerobot, safetensors, huggingface_hub are deferred into
+# __init__ (which runs inside on_configure's 60s budget) so that module
+# discovery on the portal stays under the 30s model_discovery_timeout.
+# See bd-crw and upstream PR #500 / docs/troubleshooting.md.
+if TYPE_CHECKING:
+    import torch
 
 
 class RunACT(Policy):
     def __init__(self, parent_node: Node):
         super().__init__(parent_node)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Heavy imports: deferred from module top to keep module-load fast
+        # for portal discovery (30s budget). Configure runs in on_configure
+        # which has a separate 60s budget.
+        import torch
+        from huggingface_hub import snapshot_download
+        from lerobot.policies.act.configuration_act import ACTConfig
+        from lerobot.policies.act.modeling_act import ACTPolicy
+        from safetensors.torch import load_file
+
+        # Stash modules/symbols we need in methods later.
+        self._torch = torch
+        self._load_file = load_file
+
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
         # -------------------------------------------------------------------------
         # 1. Configuration & Weights Loading
@@ -65,12 +80,16 @@ class RunACT(Policy):
         policy_path = Path(
             snapshot_download(
                 repo_id=repo_id,
-                allow_patterns=["config.json", "model.safetensors", "*.safetensors"],
+                allow_patterns=[
+                    "config.json",
+                    "model.safetensors",
+                    "*.safetensors",
+                ],
             )
         )
 
         # Load Config Manually (Fixes 'Draccus' error by removing unknown 'type' field)
-        with open(policy_path / "config.json", "r") as f:
+        with open(policy_path / "config.json") as f:
             config_dict = json.load(f)
             if "type" in config_dict:
                 del config_dict["type"]
@@ -84,13 +103,16 @@ class RunACT(Policy):
         self.policy.eval()
         self.policy.to(self.device)
 
-        self.get_logger().info(f"ACT Policy loaded on {self.device} from {policy_path}")
+        self.get_logger().info(
+            f"ACT Policy loaded on {self.device} from {policy_path}"
+        )
 
         # -------------------------------------------------------------------------
         # 2. Normalization Stats Loading
         # -------------------------------------------------------------------------
         stats_path = (
-            policy_path / "policy_preprocessor_step_3_normalizer_processor.safetensors"
+            policy_path
+            / "policy_preprocessor_step_3_normalizer_processor.safetensors"
         )
         stats = load_file(stats_path)
 
@@ -101,16 +123,28 @@ class RunACT(Policy):
         # Image Stats (1, 3, 1, 1) for broadcasting against (Batch, Channel, Height, Width)
         self.img_stats = {
             "left": {
-                "mean": get_stat("observation.images.left_camera.mean", (1, 3, 1, 1)),
-                "std": get_stat("observation.images.left_camera.std", (1, 3, 1, 1)),
+                "mean": get_stat(
+                    "observation.images.left_camera.mean", (1, 3, 1, 1)
+                ),
+                "std": get_stat(
+                    "observation.images.left_camera.std", (1, 3, 1, 1)
+                ),
             },
             "center": {
-                "mean": get_stat("observation.images.center_camera.mean", (1, 3, 1, 1)),
-                "std": get_stat("observation.images.center_camera.std", (1, 3, 1, 1)),
+                "mean": get_stat(
+                    "observation.images.center_camera.mean", (1, 3, 1, 1)
+                ),
+                "std": get_stat(
+                    "observation.images.center_camera.std", (1, 3, 1, 1)
+                ),
             },
             "right": {
-                "mean": get_stat("observation.images.right_camera.mean", (1, 3, 1, 1)),
-                "std": get_stat("observation.images.right_camera.std", (1, 3, 1, 1)),
+                "mean": get_stat(
+                    "observation.images.right_camera.mean", (1, 3, 1, 1)
+                ),
+                "std": get_stat(
+                    "observation.images.right_camera.std", (1, 3, 1, 1)
+                ),
             },
         }
         print(f"Image stats: {self.img_stats}")
@@ -132,8 +166,8 @@ class RunACT(Policy):
 
         self.get_logger().info("Normalization statistics loaded successfully.")
 
-    @staticmethod
     def _img_to_tensor(
+        self,
         raw_img,
         device: torch.device,
         scale: float,
@@ -154,7 +188,7 @@ class RunACT(Policy):
 
         # 3. To Tensor -> Permute (HWC -> CHW) -> Float -> Div(255) -> Batch Dim
         tensor = (
-            torch.from_numpy(img_np)
+            self._torch.from_numpy(img_np)
             .permute(2, 0, 1)
             .float()
             .div(255.0)
@@ -166,7 +200,9 @@ class RunACT(Policy):
         # Formula: (x - mean) / std
         return (tensor - mean) / std
 
-    def prepare_observations(self, obs_msg: Observation) -> Dict[str, torch.Tensor]:
+    def prepare_observations(
+        self, obs_msg: Observation
+    ) -> dict[str, torch.Tensor]:
         """Convert ROS Observation message into dictionary of normalized tensors."""
 
         # --- Process Cameras ---
@@ -228,9 +264,14 @@ class RunACT(Policy):
 
         # Normalize State
         raw_state_tensor = (
-            torch.from_numpy(state_np).float().unsqueeze(0).to(self.device)
+            self._torch.from_numpy(state_np)
+            .float()
+            .unsqueeze(0)
+            .to(self.device)
         )
-        obs["observation.state"] = (raw_state_tensor - self.state_mean) / self.state_std
+        obs["observation.state"] = (
+            raw_state_tensor - self.state_mean
+        ) / self.state_std
 
         return obs
 
@@ -261,13 +302,15 @@ class RunACT(Policy):
             obs_tensors = self.prepare_observations(observation_msg)
 
             # 2. Model Inference
-            with torch.inference_mode():
+            with self._torch.inference_mode():
                 # returns shape [1, 7] (first action of chunk)
                 normalized_action = self.policy.select_action(obs_tensors)
 
             # 3. Un-normalize Action
             # Formula: (norm * std) + mean
-            raw_action_tensor = (normalized_action * self.action_std) + self.action_mean
+            raw_action_tensor = (
+                normalized_action * self.action_std
+            ) + self.action_mean
 
             # 4. Extract and Command
             # raw_action_tensor is [1, 7], taking [0] gives vector of 7
@@ -294,7 +337,9 @@ class RunACT(Policy):
         self.get_logger().info("RunACT.insert_cable() exiting...")
         return True
 
-    def set_cartesian_twist_target(self, twist: Twist, frame_id: str = "base_link"):
+    def set_cartesian_twist_target(
+        self, twist: Twist, frame_id: str = "base_link"
+    ):
         motion_update_msg = MotionUpdate()
         motion_update_msg.velocity = twist
         motion_update_msg.header.frame_id = frame_id
@@ -308,10 +353,18 @@ class RunACT(Policy):
         ).flatten()
 
         motion_update_msg.feedforward_wrench_at_tip = Wrench(
-            force=Vector3(x=0.0, y=0.0, z=0.0), torque=Vector3(x=0.0, y=0.0, z=0.0)
+            force=Vector3(x=0.0, y=0.0, z=0.0),
+            torque=Vector3(x=0.0, y=0.0, z=0.0),
         )
 
-        motion_update_msg.wrench_feedback_gains_at_tip = [0.5, 0.5, 0.5, 0.0, 0.0, 0.0]
+        motion_update_msg.wrench_feedback_gains_at_tip = [
+            0.5,
+            0.5,
+            0.5,
+            0.0,
+            0.0,
+            0.0,
+        ]
 
         motion_update_msg.trajectory_generation_mode.mode = (
             TrajectoryGenerationMode.MODE_VELOCITY
